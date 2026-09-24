@@ -4,6 +4,7 @@
 
 import type { ChurchProfile, ShortcutBinding } from '../../../shared/domain/entities.ts';
 import type { ChurchProfileDraft } from '../../../shared/ipc-contract.ts';
+import { settingScope, type SettingScope } from '../../../shared/domain/sync.ts';
 import type { SqliteDriver } from '../driver.ts';
 import { asBool, asText, asTextOrNull, boolToSql, jsonToSql, nowIso, recordOp, tryJson } from './support.ts';
 
@@ -13,6 +14,9 @@ export interface SettingsRepository {
   set(key: string, value: unknown): void;
   /** Reverts to the seeded default by deleting the row; reads then fall back in code. */
   remove(key: string): void;
+  /** Only the settings that describe the library, not this computer. */
+  librarySettings(): Record<string, unknown>;
+  scopeOf(key: string): SettingScope;
 }
 
 export function createSettingsRepository(db: SqliteDriver): SettingsRepository {
@@ -39,11 +43,30 @@ export function createSettingsRepository(db: SqliteDriver): SettingsRepository {
     },
 
     set(key, value) {
+      // Scope is derived from the key, never supplied by the caller, so a setting cannot be
+      // mis-scoped by a bug at the call site. Device-scoped settings (display assignment, UI
+      // preferences) must never travel to another machine — see sync.ts.
       db.prepare(
-        `INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
+        `INSERT INTO settings (key, value_json, updated_at, scope) VALUES (?, ?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json,
-                                        updated_at = excluded.updated_at`,
-      ).run(key, jsonToSql(value), nowIso());
+                                        updated_at = excluded.updated_at,
+                                        scope = excluded.scope`,
+      ).run(key, jsonToSql(value), nowIso(), settingScope(key));
+    },
+
+    /** Library-scoped settings only — what a pull is allowed to carry. */
+    librarySettings() {
+      const rows = db.prepare("SELECT key, value_json FROM settings WHERE scope = 'library'").all();
+      const out: Record<string, unknown> = {};
+      for (const row of rows) {
+        const parsed = tryJson<unknown>(row['value_json'] ?? null);
+        if (parsed.ok) out[asText(row['key'] ?? null)] = parsed.value;
+      }
+      return out;
+    },
+
+    scopeOf(key) {
+      return settingScope(key);
     },
 
     remove(key) {

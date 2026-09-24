@@ -33,8 +33,8 @@ const wayMaker = {
 
 test('openDatabase migrates, seeds and reports a clean integrity check', () => {
   const db = open();
-  assert.equal(db.schemaVersion, 2);
-  assert.deepEqual(db.migration.applied, [1, 2]);
+  assert.equal(db.schemaVersion, 3);
+  assert.deepEqual(db.migration.applied, [1, 2, 3]);
   assert.deepEqual(db.integrityProblems, []);
   assert.equal(db.themes.list().length, 6);
   db.close();
@@ -287,15 +287,27 @@ test('search input containing FTS and LIKE metacharacters is handled literally',
   db.close();
 });
 
-test('deleting a song removes its sections and its search index entry', () => {
+test('deleting a song hides it everywhere but keeps the data as a tombstone', () => {
   const db = open();
   const saved = db.songs.save(wayMaker);
   db.songs.delete(saved.id);
 
+  // Invisible to every normal read…
   assert.equal(db.songs.get(saved.id), null);
-  assert.equal(db.driver.prepare('SELECT COUNT(*) AS n FROM song_sections').get()?.['n'], 0);
-  assert.equal(db.driver.prepare('SELECT COUNT(*) AS n FROM songs_fts').get()?.['n'], 0);
+  assert.equal(db.songs.list({}).length, 0);
   assert.equal(db.songs.list({ search: 'miracle' }).length, 0);
+  assert.equal(db.driver.prepare('SELECT COUNT(*) AS n FROM songs_fts').get()?.['n'], 0, 'must leave the search index');
+
+  // …but the row and its sections survive, so the delete can propagate to other machines
+  // and so the song can be restored intact.
+  const row = db.driver.prepare('SELECT deleted_at FROM songs WHERE id = ?').get(saved.id);
+  assert.ok(row, 'the row must remain as a tombstone');
+  assert.notEqual(row?.['deleted_at'], null);
+  assert.equal(
+    db.driver.prepare('SELECT COUNT(*) AS n FROM song_sections WHERE song_id = ?').get(saved.id)?.['n'],
+    2,
+    'sections must survive so restore returns the whole song',
+  );
   db.close();
 });
 
@@ -475,15 +487,25 @@ test('a partial reorder list is refused — it would scramble the running order'
   db.close();
 });
 
-test('deleting a service cascades its items', () => {
+test('deleting a service tombstones it and keeps its items for restore', () => {
   const db = open();
   const service = db.services.save({
     name: 'Temp',
     items: [{ kind: 'header', label: 'A', sortOrder: 0 }],
   });
   db.services.delete(service.id);
+
   assert.equal(db.services.get(service.id), null);
-  assert.equal(db.driver.prepare('SELECT COUNT(*) AS n FROM service_items').get()?.['n'], 0);
+  assert.equal(db.services.list().length, 0);
+  assert.equal(
+    db.driver.prepare('SELECT COUNT(*) AS n FROM service_items').get()?.['n'],
+    1,
+    'items survive so the running order comes back intact on restore',
+  );
+
+  const restored = db.services.restore(service.id);
+  assert.equal(restored?.items.length, 1);
+  assert.equal(restored?.items[0]?.label, 'A');
   db.close();
 });
 

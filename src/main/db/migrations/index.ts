@@ -9,10 +9,12 @@
 import type { Migration } from '../migrator.ts';
 import { SQL as init } from './0001-init.ts';
 import { SQL as seed } from './0002-seed.ts';
+import { SQL as syncFoundation } from './0003-sync-foundation.ts';
 
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'init', sql: init },
   { version: 2, name: 'seed-themes-shortcuts-settings', sql: seed },
+  { version: 3, name: 'sync-foundation', sql: syncFoundation },
 ]);
 
 /** The schema version this build understands. Surfaced in Settings → Advanced. */

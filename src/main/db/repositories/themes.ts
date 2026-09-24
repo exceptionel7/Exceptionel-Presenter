@@ -5,6 +5,7 @@
 import type { Theme, ThemeSpec } from '../../../shared/domain/entities.ts';
 import type { ThemeDraft } from '../../../shared/ipc-contract.ts';
 import type { SqliteDriver } from '../driver.ts';
+import type { IdentityRepository } from './identity.ts';
 import { asBool, asJson, asText, asTextOrNull, boolToSql, jsonToSql, newId, nowIso, recordOp } from './support.ts';
 
 export interface ThemeRepository {
@@ -38,7 +39,7 @@ export const BASE_THEME_SPEC: ThemeSpec = {
   transition: { kind: 'fade', durationMs: 250 },
 };
 
-export function createThemeRepository(db: SqliteDriver): ThemeRepository {
+export function createThemeRepository(db: SqliteDriver, identity: IdentityRepository): ThemeRepository {
   const toTheme = (row: Record<string, unknown>): Theme => ({
     id: asText((row['id'] ?? null) as never),
     name: asText((row['name'] ?? null) as never),
@@ -49,7 +50,9 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
 
   const get = (id: string): Theme | null => {
     const row = db
-      .prepare('SELECT id, name, parent_theme_id, is_builtin, spec_json FROM themes WHERE id = ?')
+      .prepare(
+        'SELECT id, name, parent_theme_id, is_builtin, spec_json FROM themes WHERE id = ? AND deleted_at IS NULL',
+      )
       .get(id);
     return row ? toTheme(row) : null;
   };
@@ -59,6 +62,7 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
       return db
         .prepare(
           `SELECT id, name, parent_theme_id, is_builtin, spec_json FROM themes
+           WHERE deleted_at IS NULL
            ORDER BY is_builtin DESC, name COLLATE NOCASE`,
         )
         .all()
@@ -70,6 +74,7 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
     save(draft) {
       return db.transaction(() => {
         const timestamp = nowIso();
+        const stamp = identity.nextStamp();
         const isNew = !draft.id;
         const themeId = draft.id ?? newId('theme');
 
@@ -93,9 +98,20 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
 
         if (isNew) {
           db.prepare(
-            `INSERT INTO themes (id, name, parent_theme_id, is_builtin, spec_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ).run(themeId, draft.name, draft.parentThemeId ?? null, boolToSql(false), jsonToSql(draft.spec), timestamp, timestamp);
+            `INSERT INTO themes (id, name, parent_theme_id, is_builtin, spec_json, created_at, updated_at,
+                                 revision, origin_device_id, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          ).run(
+            themeId,
+            draft.name,
+            draft.parentThemeId ?? null,
+            boolToSql(false),
+            jsonToSql(draft.spec),
+            timestamp,
+            timestamp,
+            stamp.revision,
+            stamp.originDeviceId,
+          );
         } else {
           const existing = get(themeId);
           if (!existing) throw new Error(`cannot update theme ${themeId}: it does not exist`);
@@ -107,11 +123,21 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
             );
           }
           db.prepare(
-            `UPDATE themes SET name = ?, parent_theme_id = ?, spec_json = ?, updated_at = ? WHERE id = ?`,
-          ).run(draft.name, draft.parentThemeId ?? null, jsonToSql(draft.spec), timestamp, themeId);
+            `UPDATE themes SET name = ?, parent_theme_id = ?, spec_json = ?, updated_at = ?,
+                               revision = ?, origin_device_id = ?
+             WHERE id = ?`,
+          ).run(
+            draft.name,
+            draft.parentThemeId ?? null,
+            jsonToSql(draft.spec),
+            timestamp,
+            stamp.revision,
+            stamp.originDeviceId,
+            themeId,
+          );
         }
 
-        recordOp(db, 'themes', themeId, isNew ? 'insert' : 'update');
+        recordOp(db, 'themes', themeId, isNew ? 'insert' : 'update', undefined, stamp);
         const saved = get(themeId);
         if (!saved) throw new Error(`theme ${themeId} vanished immediately after write`);
         return saved;
@@ -125,17 +151,26 @@ export function createThemeRepository(db: SqliteDriver): ThemeRepository {
         if (existing.isBuiltin) {
           throw new Error(`"${existing.name}" is a built-in theme and cannot be deleted`);
         }
-        // The schema's ON DELETE RESTRICT would raise a raw constraint error; this
-        // explains the actual problem instead.
-        const children = db.prepare('SELECT COUNT(*) AS n FROM themes WHERE parent_theme_id = ?').get(id);
+        // Checked explicitly rather than relying on the schema's ON DELETE RESTRICT, which
+        // would raise a raw constraint error. Only LIVE children block a delete.
+        const children = db
+          .prepare('SELECT COUNT(*) AS n FROM themes WHERE parent_theme_id = ? AND deleted_at IS NULL')
+          .get(id);
         const childCount = Number(children?.['n'] ?? 0);
         if (childCount > 0) {
           throw new Error(
             `"${existing.name}" is inherited by ${childCount} other theme(s) — reassign them first`,
           );
         }
-        db.prepare('DELETE FROM themes WHERE id = ?').run(id);
-        recordOp(db, 'themes', id, 'delete');
+
+        // Tombstone, not removal. The partial UNIQUE index on themes(name) excludes deleted
+        // rows, so the name becomes reusable immediately.
+        const stamp = identity.nextStamp();
+        db.prepare(
+          `UPDATE themes SET deleted_at = ?, updated_at = ?, revision = ?, origin_device_id = ?
+           WHERE id = ? AND deleted_at IS NULL`,
+        ).run(nowIso(), nowIso(), stamp.revision, stamp.originDeviceId, id);
+        recordOp(db, 'themes', id, 'delete', undefined, stamp);
       });
     },
 

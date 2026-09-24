@@ -18,10 +18,12 @@ state of every subsystem. Anything not marked **Working** is not pretending to w
 
 | Subsystem | Status | Verified how |
 |---|---|---|
-| SQLite schema + migrations | **Working** | 27 tests against real `node:sqlite` |
-| Song library + full-text search | **Working** | 55 repository tests |
-| Services, themes, settings, shortcuts | **Working** | 55 repository tests |
-| Crash recovery + autosave journal | **Working** | repository tests |
+| SQLite schema + migrations | **Working** | 28 tests against real `node:sqlite` |
+| Song library + full-text search | **Working** | repository tests |
+| Services, themes, settings, shortcuts | **Working** | repository tests |
+| Song → slide conversion | **Working** | 18 tests |
+| Sync foundation (tombstones, revisions, device identity) | **Working** | 23 + 29 tests |
+| Crash recovery + autosave | **Working** | repository + 14 autosave tests |
 | Live presentation state engine | **Working** | 11 reducer tests |
 | IPC contract + validation + role isolation | **Working** | 31 + 20 tests |
 | Electron security policy | **Working** | 19 tests |
@@ -30,10 +32,11 @@ state of every subsystem. Anything not marked **Working** is not pretending to w
 | Media library | **NOT IMPLEMENTED** | Phase 5 |
 | Live cameras | **NOT IMPLEMENTED** | Phase 6 |
 | Multi-display / projector output | **NOT IMPLEMENTED** | Phase 7 |
+| Cloud / folder sync (the engine itself) | **NOT IMPLEMENTED** | Phase 9+, foundation ready |
 | OBS / NDI / streaming | **NOT IMPLEMENTED** | Phase 10, seams only |
 
 ```
-# tests 162   # pass 162   # fail 0
+# tests 246   # pass 246   # fail 0
 STRICT TYPECHECK: CLEAN
 ```
 
@@ -87,6 +90,11 @@ sits behind a `SqliteDriver` interface, so the choice is reversible.
 **3. The audience output window is read-only by construction.** Its preload exposes a
 narrow surface, and the IPC dispatcher independently refuses every mutating channel from
 an output-role window. An audience display is never one bug away from editing the library.
+
+**4. Deletes are tombstones, ordered by a logical clock — not wall-clock time.** One library
+is authoritative and others pull from it; see [`docs/SYNC.md`](docs/SYNC.md). Church booth
+computers frequently have clocks that are months off, which would make timestamp-based
+last-write-wins silently discard the *newer* edit.
 
 ```
 src/

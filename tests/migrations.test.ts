@@ -33,7 +33,7 @@ test('migrations apply cleanly to an empty database', () => {
 
   assert.equal(outcome.fromVersion, 0);
   assert.equal(outcome.toVersion, APP_SCHEMA_VERSION);
-  assert.deepEqual(outcome.applied, [1, 2]);
+  assert.deepEqual(outcome.applied, [1, 2, 3]);
   assert.equal(currentVersion(db), APP_SCHEMA_VERSION);
   db.close();
 });

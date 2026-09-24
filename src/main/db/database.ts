@@ -22,6 +22,7 @@ import { createSongRepository, type SongRepository } from './repositories/songs.
 import { createServiceRepository, type ServiceRepository } from './repositories/services.ts';
 import { createThemeRepository, type ThemeRepository } from './repositories/themes.ts';
 import { createRecoveryRepository, type RecoveryRepository } from './repositories/recovery.ts';
+import { createIdentityRepository, type IdentityRepository } from './repositories/identity.ts';
 
 export interface AppDatabase {
   readonly driver: SqliteDriver;
@@ -30,6 +31,7 @@ export interface AppDatabase {
   /** Non-fatal integrity warnings found at startup, surfaced in Settings → Advanced. */
   readonly integrityProblems: readonly string[];
 
+  readonly identity: IdentityRepository;
   readonly settings: SettingsRepository;
   readonly profile: ProfileRepository;
   readonly shortcuts: ShortcutsRepository;
@@ -59,18 +61,23 @@ export function openDatabase(options: OpenDatabaseOptions): AppDatabase {
   // running Sunday's service, but it must be visible somewhere.
   const integrity = verifyIntegrity(driver);
 
+  // Identity is created first: every syncable repository stamps its writes with the device
+  // id and Lamport revision this provides.
+  const identity = createIdentityRepository(driver);
+
   return {
     driver,
     schemaVersion: APP_SCHEMA_VERSION,
     migration,
     integrityProblems: Object.freeze([...integrity.problems]),
 
+    identity,
     settings: createSettingsRepository(driver),
     profile: createProfileRepository(driver),
     shortcuts: createShortcutsRepository(driver),
-    songs: createSongRepository(driver),
-    services: createServiceRepository(driver),
-    themes: createThemeRepository(driver),
+    songs: createSongRepository(driver, identity),
+    services: createServiceRepository(driver, identity),
+    themes: createThemeRepository(driver, identity),
     recovery: createRecoveryRepository(driver),
 
     transaction: (fn) => driver.transaction(fn),

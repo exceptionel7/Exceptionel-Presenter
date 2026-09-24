@@ -85,8 +85,11 @@ export const jsonToSql = (value: unknown): string => JSON.stringify(value ?? nul
 export type SyncOp = 'insert' | 'update' | 'delete';
 
 /**
- * Records a change for the future cloud sync engine. Called inside the same transaction
- * as the write itself, so the log can never disagree with the data.
+ * Records a change for the sync engine. Called inside the same transaction as the write
+ * itself, so the log can never disagree with the data.
+ *
+ * `stamp` carries the Lamport revision and origin device, so a pull can order entries
+ * without trusting either machine's clock.
  */
 export function recordOp(
   db: SqliteDriver,
@@ -94,10 +97,20 @@ export function recordOp(
   entityId: string,
   op: SyncOp,
   payload?: unknown,
+  stamp?: { revision: number; originDeviceId: string | null },
 ): void {
   db.prepare(
-    'INSERT INTO sync_oplog (entity, entity_id, op, payload_json, local_ts) VALUES (?, ?, ?, ?, ?)',
-  ).run(entity, entityId, op, payload === undefined ? null : jsonToSql(payload), nowIso());
+    `INSERT INTO sync_oplog (entity, entity_id, op, payload_json, local_ts, revision, origin_device_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    entity,
+    entityId,
+    op,
+    payload === undefined ? null : jsonToSql(payload),
+    nowIso(),
+    stamp?.revision ?? null,
+    stamp?.originDeviceId ?? null,
+  );
 }
 
 // ── query helpers ───────────────────────────────────────────────────────────────
