@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+out/
+dist/
+release/
+*.tsbuildinfo
+
+# Local application data — a developer's own worship library must never be committed
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+library/
+media-library/
+
+# Environment and secrets (Section 34: never commit credentials)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+logs/

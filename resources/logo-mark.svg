@@ -1,0 +1,43 @@
+<!--
+  EXCEPTIONEL PRESENTER — logo mark (vector recreation of the supplied raster logo).
+
+  The squared "C" in metallic silver with the cyan→blue play triangle nested in its
+  aperture. Vector so it stays crisp in the title bar at 16px and on the splash at 512px.
+
+  NOTE: this is a recreation for in-app UI use. Place your original raster export at
+  resources/icon.png (1024×1024) for electron-builder to generate installer icons —
+  see docs/BRANDING.md.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Exceptionel Presenter">
+  <defs>
+    <linearGradient id="ep-silver" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="42%" stop-color="#E4EAF2"/>
+      <stop offset="62%" stop-color="#AFBECF"/>
+      <stop offset="100%" stop-color="#8496AC"/>
+    </linearGradient>
+    <linearGradient id="ep-silver-edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#7C8EA4" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="ep-signal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3FB0FA"/>
+      <stop offset="55%" stop-color="#1E8FEF"/>
+      <stop offset="100%" stop-color="#1F5FE8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Squared "C": outer bracket with a chamfered leading edge, open to the right. -->
+  <path fill="url(#ep-silver)"
+        d="M330 54 H452 L392 130 H236
+           a56 56 0 0 0 -56 56 V326
+           a56 56 0 0 0 56 56 H392 L452 458 H330
+           a150 150 0 0 1 -150 -150 V204
+           A150 150 0 0 1 330 54 Z"/>
+  <!-- Inner highlight to read as brushed metal rather than flat grey. -->
+  <path fill="url(#ep-silver-edge)" opacity="0.55"
+        d="M330 54 H452 L392 130 H236 a56 56 0 0 0 -56 56 V256 h-40 V204 A150 150 0 0 1 330 54 Z"/>
+
+  <!-- Play triangle sitting in the aperture of the C. -->
+  <path fill="url(#ep-signal)" d="M262 168 L404 256 L262 344 Z"/>
+</svg>
