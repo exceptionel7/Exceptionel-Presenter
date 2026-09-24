@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Exceptionel Presenter — Output</title>
+    <style>
+      /*
+        Inlined rather than waiting for the stylesheet: this window is the audience screen.
+        A single frame of white flash while CSS loads would be visible to the whole room.
+      */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        cursor: none;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

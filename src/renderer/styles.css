@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-ink-900 text-silver-300 font-sans antialiased;
+    /* Production software, not a document: the whole surface should not be selectable. */
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* Text the operator genuinely needs to copy — lyrics, references, error detail. */
+  .selectable {
+    user-select: text;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  /* Dark, unobtrusive scrollbars. A bright scrollbar in a dark auditorium is a distraction. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-ink-700 rounded-full border-2 border-solid border-transparent bg-clip-padding;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-600;
+  }
+
+  /* Visible focus for keyboard operators, but never a ring on a mouse click. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-signal-500;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-gradient-panel border border-ink-700 rounded-lg shadow-panel;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between px-4 h-10 border-b border-ink-700
+           text-[11px] font-semibold uppercase tracking-[0.14em] text-silver-600;
+  }
+
+  /* Primary action: the logo's play-triangle gradient. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-9
+           text-sm font-medium transition-colors duration-snap
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-signal text-white shadow-glass hover:brightness-110;
+  }
+  .btn-secondary {
+    @apply btn bg-ink-750 text-silver-300 border border-ink-700 hover:bg-ink-700 hover:text-silver-100;
+  }
+  .btn-ghost {
+    @apply btn text-silver-500 hover:bg-ink-800 hover:text-silver-200;
+  }
+
+  /* Live controls run large: they are hit under pressure, sometimes in the dark. */
+  .btn-transport {
+    @apply inline-flex flex-col items-center justify-center gap-1 rounded-md
+           min-w-[84px] h-14 px-4 border text-xs font-semibold uppercase tracking-wider
+           transition-colors duration-snap
+           bg-ink-800 border-ink-700 text-silver-300
+           hover:bg-ink-750 hover:text-silver-100
+           disabled:opacity-30 disabled:cursor-not-allowed;
+  }
+
+  .field-label {
+    @apply block text-[11px] font-semibold uppercase tracking-[0.12em] text-silver-600 mb-1.5;
+  }
+
+  .field {
+    @apply w-full h-9 px-3 rounded-md bg-ink-950 border border-ink-700 text-sm text-silver-200
+           placeholder:text-silver-600
+           focus:border-signal-500 focus:ring-1 focus:ring-signal-500 transition-colors duration-snap;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 h-9 px-3 rounded-md text-sm text-silver-500
+           hover:bg-ink-800 hover:text-silver-200 transition-colors duration-snap;
+  }
+  .nav-item-active {
+    @apply bg-ink-750 text-silver-100 shadow-glass;
+  }
+
+  /* Tabular numerals so a running timer does not visibly jitter. */
+  .timecode {
+    @apply font-mono tabular-nums;
+  }
+}

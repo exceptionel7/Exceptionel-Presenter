@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      No CSP meta tag: the policy is injected as a real HTTP header by the main process
+      (see src/main/windows/window-manager.ts) so it cannot be stripped by page scripts.
+    -->
+    <title>Exceptionel Presenter</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
