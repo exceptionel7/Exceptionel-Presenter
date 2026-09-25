@@ -26,6 +26,11 @@ declare module 'node:assert/strict' {
       expected?: RegExp | ((e: unknown) => boolean) | string,
       message?: string,
     ): void;
+    rejects(
+      fn: (() => Promise<unknown>) | Promise<unknown>,
+      expected?: RegExp | ((e: unknown) => boolean) | string,
+      message?: string,
+    ): Promise<void>;
     doesNotThrow(fn: () => unknown, message?: string): void;
     fail(message?: string): never;
   }
@@ -90,7 +95,8 @@ declare module 'node:os' {
 
 declare module 'node:crypto' {
   export function randomUUID(): string;
-  export function randomBytes(size: number): { toString(encoding: string): string };
+  /** Node returns a Buffer, which is a Uint8Array subclass. */
+  export function randomBytes(size: number): Uint8Array & { toString(encoding: string): string };
   export function createHash(algorithm: string): {
     update(data: string): { digest(encoding: string): string };
   };
@@ -144,6 +150,8 @@ declare module 'node:https' {
   export interface Server {
     listen(port: number, host?: string): void;
     close(callback?: () => void): void;
+    closeAllConnections?(): void;
+    closeIdleConnections?(): void;
     address(): { port: number; address: string } | string | null;
     on(event: string, listener: (...args: never[]) => void): void;
     readonly listening: boolean;
@@ -187,6 +195,21 @@ declare const process: {
   platform: string;
   env: Record<string, string | undefined>;
   versions: Record<string, string>;
+  argv: string[];
   cwd(): string;
   exit(code?: number): never;
 };
+
+/**
+ * Node's timers return a Timeout object with unref(), not the DOM's numeric handle.
+ * Declaring these matters: the server calls `.unref()` so a keep-alive heartbeat can never
+ * hold the process open, and without the right type that call looks like an error.
+ */
+interface NodeTimeout {
+  unref(): NodeTimeout;
+  ref(): NodeTimeout;
+}
+declare function setTimeout(handler: () => void, ms?: number): NodeTimeout;
+declare function clearTimeout(handle: NodeTimeout | undefined): void;
+declare function setInterval(handler: () => void, ms?: number): NodeTimeout;
+declare function clearInterval(handle: NodeTimeout | undefined): void;
