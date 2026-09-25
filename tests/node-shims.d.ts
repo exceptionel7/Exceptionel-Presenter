@@ -61,7 +61,11 @@ declare module 'node:fs' {
   export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
   export function readFileSync(path: string, encoding: string): string;
   export function readdirSync(path: string): string[];
-  export function writeFileSync(path: string, data: string, encoding?: string): void;
+  export function writeFileSync(
+    path: string,
+    data: string | Uint8Array,
+    options?: string | { encoding?: string; mode?: number },
+  ): void;
 }
 
 declare module 'node:path' {
@@ -78,6 +82,10 @@ declare module 'node:path' {
 declare module 'node:os' {
   export function tmpdir(): string;
   export function platform(): string;
+  export function networkInterfaces(): Record<
+    string,
+    { address: string; family: string | number; internal: boolean; netmask?: string }[] | undefined
+  >;
 }
 
 declare module 'node:crypto' {
@@ -86,7 +94,90 @@ declare module 'node:crypto' {
   export function createHash(algorithm: string): {
     update(data: string): { digest(encoding: string): string };
   };
+
+  export interface KeyObject {
+    export(options: { format: 'der'; type: 'spki' | 'pkcs8' }): Uint8Array;
+    export(options: { format: 'pem'; type: 'spki' | 'pkcs8' | 'sec1' }): string | Buffer;
+  }
+  export function generateKeyPairSync(
+    type: 'ec',
+    options: { namedCurve: string },
+  ): { publicKey: KeyObject; privateKey: KeyObject };
+  export function createPublicKey(key: string | KeyObject): KeyObject;
+  export function createPrivateKey(key: string | KeyObject): KeyObject;
+  export function sign(
+    algorithm: string,
+    data: Uint8Array,
+    key: KeyObject | string,
+  ): Uint8Array;
+  export class X509Certificate {
+    constructor(pem: string | Uint8Array);
+    readonly subject: string;
+    readonly issuer: string;
+    readonly subjectAltName: string | undefined;
+    readonly validFrom: string;
+    readonly validTo: string;
+    readonly fingerprint256: string;
+    readonly serialNumber: string;
+    readonly keyUsage: string[] | undefined;
+    readonly ca: boolean;
+    readonly publicKey: KeyObject;
+    verify(key: KeyObject): boolean;
+  }
 }
+
+declare module 'node:https' {
+  export interface ServerResponseLike {
+    writeHead(status: number, headers?: Record<string, string>): void;
+    end(body?: string | Uint8Array): void;
+    write(chunk: string | Uint8Array): boolean;
+    setHeader(name: string, value: string): void;
+    readonly writableEnded: boolean;
+  }
+  export interface IncomingMessageLike {
+    readonly url: string | undefined;
+    readonly method: string | undefined;
+    readonly headers: Record<string, string | string[] | undefined>;
+    on(event: string, listener: (...args: never[]) => void): void;
+    setEncoding(encoding: string): void;
+  }
+  export interface Server {
+    listen(port: number, host?: string): void;
+    close(callback?: () => void): void;
+    address(): { port: number; address: string } | string | null;
+    on(event: string, listener: (...args: never[]) => void): void;
+    readonly listening: boolean;
+  }
+  export function createServer(
+    options: { cert: string; key: string },
+    handler?: (request: IncomingMessageLike, response: ServerResponseLike) => void,
+  ): Server;
+}
+
+declare module 'node:tls' {
+  export interface TlsSocket {
+    readonly authorized: boolean;
+    getPeerCertificate(): Record<string, unknown>;
+    getProtocol(): string | null;
+    end(): void;
+    on(event: string, listener: (...args: never[]) => void): void;
+  }
+  export function connect(options: {
+    host: string;
+    port: number;
+    rejectUnauthorized?: boolean;
+    servername?: string;
+  }): TlsSocket;
+}
+
+declare module 'node:events' {
+  export function once(emitter: unknown, event: string): Promise<unknown[]>;
+}
+
+declare const Buffer: {
+  from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string };
+};
+type Buffer = { toString(encoding?: string): string };
 
 declare module 'node:url' {
   export function fileURLToPath(url: string | URL): string;

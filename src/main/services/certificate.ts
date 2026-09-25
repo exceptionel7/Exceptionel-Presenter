@@ -22,7 +22,6 @@ import { dirname, join } from 'node:path';
 import {
   bitString,
   boolean,
-  concat,
   contextConstructed,
   contextPrimitive,
   integer,

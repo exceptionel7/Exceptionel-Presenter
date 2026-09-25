@@ -189,23 +189,16 @@ test('A REAL HTTPS SERVER SERVES OUR GENERATED CERTIFICATE AND COMPLETES A TLS H
   const port = (server.address() as { port: number }).port;
 
   try {
-    const response = await fetch(`https://localhost:${port}/`, {
-      // The certificate is self-signed, so it is intentionally untrusted here — exactly the
-      // situation the phone is in. What is being proven is that TLS itself succeeds.
-      // @ts-expect-error Node-specific option, absent from the DOM fetch types.
-      dispatcher: undefined,
-    }).catch(async () => {
-      // Node's fetch has no per-request TLS override, so fall back to a raw TLS socket.
-      return null;
-    });
-    // Whether fetch worked or not, prove the handshake with a direct TLS connection.
-    void response;
-
+    // A raw TLS socket rather than fetch: the certificate is intentionally untrusted here,
+    // exactly as it is on the phone, and a socket lets the handshake itself be inspected.
     const socket = connect({ host: 'localhost', port, rejectUnauthorized: false, servername: 'localhost' });
     await once(socket, 'secureConnect');
 
     assert.equal(socket.authorized, false, 'self-signed, so not authorised — as on the phone');
-    const peer = socket.getPeerCertificate();
+    const peer = socket.getPeerCertificate() as {
+      subject?: { CN?: string };
+      subjectaltname?: string;
+    };
     assert.match(peer.subject?.CN ?? '', /Exceptionel Wireless Camera/);
     assert.match(String(peer.subjectaltname ?? ''), /DNS:localhost/);
     assert.ok(socket.getProtocol()?.startsWith('TLS'), `negotiated ${socket.getProtocol()}`);
