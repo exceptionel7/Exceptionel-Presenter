@@ -20,6 +20,7 @@ import {
   isPermissionGranted,
 } from '../security/policy.ts';
 import { roleArgument } from '../../shared/preload-role.ts';
+import { readConsoleMessage } from './console-message.ts';
 import type { WindowRole } from '../ipc/dispatcher.ts';
 
 /** Vite dev server URL, injected by electron-vite. Absent in packaged builds. */
@@ -104,11 +105,27 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
      * appears in the terminal the operator is watching. That cost real debugging time once
      * already (a CSP rule silently blocked React Refresh). Renderer failures must be loud.
      */
-    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-      // 2 = warning, 3 = error in Chromium's level enum.
-      if (level < 2) return;
-      const source = sourceId ? ` (${sourceId}:${line})` : '';
-      console[level === 3 ? 'error' : 'warn'](`[renderer:${role}] ${message}${source}`);
+    /*
+     * Electron changed this event's shape: it used to pass (event, level, message, line,
+     * sourceId) and now passes a single details object, with `level` as a string rather than
+     * a Chromium enum. The old form logs a deprecation warning and will be removed.
+     *
+     * Both shapes are read rather than committing to one, because this is diagnostics code —
+     * if it throws or silently stops working after an Electron upgrade, we lose the very
+     * thing that makes renderer failures visible.
+     */
+    window.webContents.on('console-message', (...args: unknown[]) => {
+      const message = readConsoleMessage(args);
+      if (!message) return;
+
+      // In development everything is forwarded, including the preload's own confirmation
+      // line — a noisy terminal is a fair price for being able to see what happened. A
+      // packaged build forwards only warnings and errors.
+      if (!DEV_SERVER_URL && message.severity === 'info') return;
+
+      const location = message.sourceId ? ` (${message.sourceId}:${message.line})` : '';
+      const write = message.severity === 'error' ? console.error : message.severity === 'warning' ? console.warn : console.log;
+      write(`[renderer:${role}] ${message.text}${location}`);
     });
 
     window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
