@@ -127,11 +127,14 @@ test('everything a presentation app has no business requesting is denied', () =>
 
 // ── CSP ─────────────────────────────────────────────────────────────────────────
 
-test('packaged CSP has no unsafe-eval and no dev server', () => {
+test('packaged CSP has no unsafe-eval, no unsafe-inline scripts, and no dev server', () => {
   const csp = buildCsp({ devServerUrl: 'http://localhost:5173', isPackaged: true });
   assert.doesNotMatch(csp, /unsafe-eval/, 'production must never allow eval');
   assert.doesNotMatch(csp, /localhost/, 'production must not trust a dev server');
-  assert.match(csp, /script-src 'self'/);
+
+  const scriptSrc = /script-src ([^;]*)/.exec(csp)?.[1] ?? '';
+  assert.doesNotMatch(scriptSrc, /unsafe-inline/, 'production must not allow inline scripts');
+  assert.match(scriptSrc, /'self'/);
 });
 
 test('development CSP permits the dev server and its HMR websocket', () => {
@@ -139,6 +142,25 @@ test('development CSP permits the dev server and its HMR websocket', () => {
   assert.match(csp, /script-src [^;]*http:\/\/localhost:5173/);
   assert.match(csp, /connect-src [^;]*ws:\/\/localhost:5173/, 'Vite HMR needs the websocket');
   assert.match(csp, /unsafe-eval/, 'Vite dev requires eval');
+});
+
+test("development CSP allows inline scripts — React Refresh's preamble is inline", () => {
+  // Without this the preamble is blocked, $RefreshReg$ is undefined, every transformed
+  // module throws, and the window renders completely blank with no terminal output.
+  const csp = buildCsp({ devServerUrl: 'http://localhost:5173', isPackaged: false });
+  const scriptSrc = /script-src ([^;]*)/.exec(csp)?.[1] ?? '';
+  assert.match(scriptSrc, /'unsafe-inline'/);
+});
+
+test('the inline-script relaxation is strictly dev-only', () => {
+  const dev = /script-src ([^;]*)/.exec(buildCsp({ devServerUrl: 'http://localhost:5173', isPackaged: false }))?.[1] ?? '';
+  const prod = /script-src ([^;]*)/.exec(buildCsp({ devServerUrl: null, isPackaged: true }))?.[1] ?? '';
+  assert.match(dev, /unsafe-inline/);
+  assert.doesNotMatch(prod, /unsafe-inline/);
+  // A packaged build must stay strict even if a dev URL is somehow still set.
+  const prodWithDevUrl =
+    /script-src ([^;]*)/.exec(buildCsp({ devServerUrl: 'http://localhost:5173', isPackaged: true }))?.[1] ?? '';
+  assert.doesNotMatch(prodWithDevUrl, /unsafe-inline/);
 });
 
 test('CSP locks down the directives that matter', () => {

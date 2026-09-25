@@ -98,14 +98,22 @@ export interface CspOptions {
  *  - `media-src`/`img-src` allow `blob:` and `mediastream:` for camera feeds, and
  *    `app-media:` for the custom protocol that streams local media files (Phase 5) —
  *    that protocol exists precisely so we never have to widen this to `file:`.
- *  - `'unsafe-eval'` is permitted ONLY against the dev server, which Vite needs for HMR.
- *    It is absent from packaged builds.
+ *
+ * DEV-ONLY script relaxations, both absent from packaged builds:
+ *  - `'unsafe-eval'` — Vite's dev transform needs it.
+ *  - `'unsafe-inline'` — @vitejs/plugin-react injects the React Refresh preamble as an
+ *    INLINE module script. Blocking it leaves `$RefreshReg$` undefined, so every
+ *    transformed module throws and React never mounts. The symptom is a completely blank
+ *    window with nothing in the terminal, which is why this is called out here rather
+ *    than left to be rediscovered.
  */
 export function buildCsp(options: CspOptions): string {
   const dev = !options.isPackaged && options.devServerUrl ? options.devServerUrl : null;
   const devWs = dev ? dev.replace(/^http/, 'ws') : null;
 
-  const scriptSrc = ["'self'", dev, dev ? "'unsafe-eval'" : null].filter(Boolean).join(' ');
+  const scriptSrc = ["'self'", dev, dev ? "'unsafe-eval'" : null, dev ? "'unsafe-inline'" : null]
+    .filter(Boolean)
+    .join(' ');
   const connectSrc = ["'self'", dev, devWs].filter(Boolean).join(' ');
 
   return [

@@ -66,14 +66,54 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
 
   const load = (window: BrowserWindow, entry: string): void => {
     if (DEV_SERVER_URL) {
-      void window.loadURL(`${DEV_SERVER_URL}/${entry}/index.html`);
+      const url = `${DEV_SERVER_URL}/${entry}/index.html`;
+      console.log(`[window:${entry}] loading ${url}`);
+      void window.loadURL(url).catch((error: unknown) => {
+        console.error(`[window:${entry}] loadURL failed:`, error);
+      });
     } else {
-      void window.loadFile(join(options.rendererDir, entry, 'index.html'));
+      const file = join(options.rendererDir, entry, 'index.html');
+      void window.loadFile(file).catch((error: unknown) => {
+        console.error(`[window:${entry}] loadFile ${file} failed:`, error);
+      });
     }
   };
 
   const harden = (window: BrowserWindow, role: WindowRole): void => {
     roles.set(window.webContents, role);
+
+    /*
+     * DIAGNOSTICS FIRST.
+     *
+     * A renderer that fails to boot shows an empty window whose background matches the UI
+     * background, so it is indistinguishable from a working-but-empty app — and nothing
+     * appears in the terminal the operator is watching. That cost real debugging time once
+     * already (a CSP rule silently blocked React Refresh). Renderer failures must be loud.
+     */
+    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      // 2 = warning, 3 = error in Chromium's level enum.
+      if (level < 2) return;
+      const source = sourceId ? ` (${sourceId}:${line})` : '';
+      console[level === 3 ? 'error' : 'warn'](`[renderer:${role}] ${message}${source}`);
+    });
+
+    window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+      // -3 is ERR_ABORTED, which fires on ordinary navigation cancellation.
+      if (errorCode === -3) return;
+      console.error(
+        `[renderer:${role}] failed to load ${validatedURL}: ${errorDescription} (${errorCode})`,
+      );
+    });
+
+    window.webContents.on('preload-error', (_event, preloadPath, error) => {
+      // Without this, a broken preload leaves window.exceptionel undefined and the UI can
+      // only report "could not reach its application core" without saying why.
+      console.error(`[preload:${role}] ${preloadPath} threw: ${error.message}`);
+    });
+
+    window.webContents.on('unresponsive', () => {
+      console.error(`[renderer:${role}] became unresponsive`);
+    });
 
     // Refuse navigation away from our own origin. A link in a song's notes, an injected
     // iframe, or a compromised dependency calling location.assign all land here.
@@ -123,7 +163,12 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
     harden(operator, 'operator');
 
     // Show only once painted: a visible-but-empty frame looks like a hang.
-    operator.once('ready-to-show', () => operator?.show());
+    operator.once('ready-to-show', () => {
+      operator?.show();
+      // DevTools open automatically in development so a renderer error is visible
+      // immediately rather than hiding behind a blank window.
+      if (DEV_SERVER_URL) operator?.webContents.openDevTools({ mode: 'detach' });
+    });
 
     operator.on('closed', () => {
       operator = null;

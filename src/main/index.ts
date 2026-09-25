@@ -17,6 +17,7 @@ import { openDatabase, type AppDatabase } from './db/database.ts';
 import { MigrationFailure } from './db/migrator.ts';
 import { APP_SCHEMA_VERSION } from './db/migrations/index.ts';
 import { createWindowManager, type WindowManager } from './windows/window-manager.ts';
+import { installApplicationMenu } from './windows/menu.ts';
 import { createLiveStateService } from './services/live-state-service.ts';
 import { createAutosave } from './services/autosave.ts';
 import { createHandlers } from './ipc/handlers.ts';
@@ -180,6 +181,14 @@ async function bootstrap(): Promise<void> {
   // Output and confidence windows are pure render targets; this is how they learn.
   live.subscribe((state) => windows.broadcast('live:state', state));
   live.subscribeCues((cues) => windows.broadcast('live:cues', { cues }));
+
+  // Menu items emit named actions rather than acting directly, so the menu, keyboard
+  // shortcuts and on-screen buttons all follow one code path.
+  installApplicationMenu({
+    dispatch: (action) => windows.sendTo('operator', 'action:invoke', { action }),
+    isDevelopment: !app.isPackaged,
+    getOperator: () => windows.getOperator(),
+  });
 
   autosave.start();
 

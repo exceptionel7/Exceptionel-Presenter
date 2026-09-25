@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppInfo } from '@shared/ipc-contract.ts';
 import type { ErrorNotice } from '@shared/domain/errors.ts';
-import type { LiveState } from '@shared/domain/live-state.ts';
+import type { LiveIntent, LiveState } from '@shared/domain/live-state.ts';
 import { BRAND } from '@shared/brand.ts';
 import { client } from '@ui/client.ts';
 import { useIpcEvent, useQuery } from '@ui/hooks.ts';
@@ -27,6 +27,18 @@ const GROUP_LABEL: Record<string, string> = {
   system: 'System',
 };
 
+/**
+ * Menu/shortcut actions that map onto live intents. Main owns the authoritative state, so
+ * these send an intent rather than mutating anything locally.
+ */
+const LIVE_ACTIONS: Record<string, LiveIntent | undefined> = {
+  'live.previous': { type: 'previous' },
+  'live.next': { type: 'next' },
+  'live.black': { type: 'black' },
+  'live.clear': { type: 'clear' },
+  'live.stop': { type: 'stop' },
+};
+
 export function App(): JSX.Element {
   const [activeId, setActiveId] = useState<SectionId>('dashboard');
   const [notices, setNotices] = useState<ErrorNotice[]>([]);
@@ -42,6 +54,20 @@ export function App(): JSX.Element {
     setNotices((current) => [notice, ...current].slice(0, 4));
   });
   useIpcEvent('autosave:committed', ({ at }) => setSavedAt(at));
+
+  // Menu items and global shortcuts arrive as named actions rather than raw keys, so the
+  // menu, the keyboard and on-screen buttons all take the same path.
+  useIpcEvent('action:invoke', ({ action }) => {
+    if (action.startsWith('nav.')) {
+      const target = action.slice('nav.'.length) as SectionId;
+      if (SECTIONS.some((section) => section.id === target)) setActiveId(target);
+      return;
+    }
+    if (action.startsWith('live.')) {
+      const intent = LIVE_ACTIONS[action];
+      if (intent) void client.invoke('live:intent', intent);
+    }
+  });
 
   useEffect(() => {
     void client.invoke('live:getState').then((result) => {
