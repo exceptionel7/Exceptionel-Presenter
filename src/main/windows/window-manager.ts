@@ -19,6 +19,7 @@ import {
   isNavigationAllowed,
   isPermissionGranted,
 } from '../security/policy.ts';
+import { roleArgument } from '../../shared/preload-role.ts';
 import type { WindowRole } from '../ipc/dispatcher.ts';
 
 /** Vite dev server URL, injected by electron-vite. Absent in packaged builds. */
@@ -59,10 +60,23 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
   installSessionGuards();
 
   /**
-   * Preloads are built as .cjs, not .js — Electron supports ESM preloads only when
-   * `sandbox: false`, and every window here is sandboxed. See electron.vite.config.ts.
+   * One preload bundle for all three roles, built as .cjs.
+   *
+   * Not three files: a sandboxed preload cannot `require()` local files, and three entry
+   * points made Rollup split their shared code into a chunk that each stub then required
+   * and failed on. See electron.vite.config.ts.
    */
-  const preload = (name: string): string => join(options.preloadDir, `${name}.cjs`);
+  const PRELOAD_PATH = join(options.preloadDir, 'index.cjs');
+
+  /**
+   * Tells the preload which surface to expose. Set per-window by main and unreachable from
+   * page JavaScript; the preload falls back to the most restricted role if it is absent.
+   */
+  const roleWebPreferences = (role: WindowRole) => ({
+    ...SECURE_WEB_PREFERENCES,
+    preload: PRELOAD_PATH,
+    additionalArguments: [roleArgument(role)],
+  });
 
   const load = (window: BrowserWindow, entry: string): void => {
     if (DEV_SERVER_URL) {
@@ -157,7 +171,7 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
       show: false,
       backgroundColor: '#0A1421', // the logo navy, so startup never flashes white
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      webPreferences: { ...SECURE_WEB_PREFERENCES, preload: preload('operator') },
+      webPreferences: roleWebPreferences('operator'),
     });
 
     harden(operator, 'operator');
@@ -206,7 +220,7 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
       // True black, not a near-black: anything else is visible as a grey glow in a dark
       // auditorium, and reveals the screen edges during a black-out.
       backgroundColor: '#000000',
-      webPreferences: { ...SECURE_WEB_PREFERENCES, preload: preload('output') },
+      webPreferences: roleWebPreferences('output'),
     });
 
     harden(output, 'output');
@@ -248,7 +262,7 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
       autoHideMenuBar: true,
       skipTaskbar: true,
       backgroundColor: '#060D16',
-      webPreferences: { ...SECURE_WEB_PREFERENCES, preload: preload('confidence') },
+      webPreferences: roleWebPreferences('confidence'),
     });
 
     harden(confidence, 'confidence');

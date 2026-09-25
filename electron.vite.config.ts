@@ -44,28 +44,36 @@ export default defineConfig({
   },
 
   /**
-   * PRELOAD — emitted as CommonJS (.cjs).
+   * PRELOAD — ONE CommonJS bundle, self-contained.
    *
-   * This is not a style choice. Electron only supports ESM preload scripts when
-   * `sandbox: false`, and every window here runs with `sandbox: true` (see
-   * src/main/security/policy.ts). So preloads must be CJS.
+   * Two constraints force this exact shape:
    *
-   * The extension must be .cjs rather than .js: with "type": "module" in package.json, a
-   * .js file is treated as ESM and the CommonJS body fails to evaluate.
+   * 1. CommonJS, not ESM. Electron supports ESM preloads only when `sandbox: false`, and
+   *    every window here is sandboxed (src/main/security/policy.ts). The extension must be
+   *    .cjs rather than .js, because "type": "module" in package.json makes a .js file ESM
+   *    and the CommonJS body then fails to evaluate.
+   *
+   * 2. A SINGLE entry. With three entries (operator/output/confidence) Rollup code-split
+   *    their shared bridge code into chunks/bridge-*.cjs, leaving each entry a 0.22 kB stub
+   *    that `require`d it. A sandboxed preload cannot require local files, so the require
+   *    threw, contextBridge was never reached, and window.exceptionel was undefined — with
+   *    no message explaining why. One entry has nothing to split.
+   *
+   * The window role is passed at runtime via webPreferences.additionalArguments instead.
+   * `inlineDynamicImports` guarantees the output stays a single file even if a dynamic
+   * import is introduced later.
    */
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: fromRoot('out/preload'),
       rollupOptions: {
-        input: {
-          // Role-scoped. The output preload deliberately exposes a read-only surface —
-          // see src/preload/output.ts
-          operator: fromRoot('src/preload/operator.ts'),
-          output: fromRoot('src/preload/output.ts'),
-          confidence: fromRoot('src/preload/confidence.ts'),
+        input: { index: fromRoot('src/preload/index.ts') },
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs',
+          inlineDynamicImports: true,
         },
-        output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
   },
