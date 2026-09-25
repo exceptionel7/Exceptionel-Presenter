@@ -5,7 +5,7 @@
   "author": "Exceptionel",
   "license": "UNLICENSED",
   "private": true,
-  "main": "./out/main/index.js",
+  "main": "./out/main/index.mjs",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"

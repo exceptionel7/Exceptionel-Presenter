@@ -58,7 +58,11 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
 
   installSessionGuards();
 
-  const preload = (name: string): string => join(options.preloadDir, `${name}.js`);
+  /**
+   * Preloads are built as .cjs, not .js — Electron supports ESM preloads only when
+   * `sandbox: false`, and every window here is sandboxed. See electron.vite.config.ts.
+   */
+  const preload = (name: string): string => join(options.preloadDir, `${name}.cjs`);
 
   const load = (window: BrowserWindow, entry: string): void => {
     if (DEV_SERVER_URL) {
