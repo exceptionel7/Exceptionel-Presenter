@@ -16,6 +16,7 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:local": "node tools/local-typecheck/check.mjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "test": "node --test --experimental-strip-types --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",

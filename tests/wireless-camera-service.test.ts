@@ -661,3 +661,123 @@ test('a cancelled slot is released, so capacity is not leaked', async () => {
     await h.cleanup();
   }
 });
+
+
+// ── the silent-renderer watchdog ────────────────────────────────────────────────
+
+/**
+ * Guards against the failure that produced total silence.
+ *
+ * `OutputApp.tsx` called `useWirelessCameraHost()` without importing it. The output renderer threw
+ * on its first render, so it mounted no React tree and subscribed to no IPC events. Every message
+ * main sent it was absorbed without error — `webContents.send` has no return value and no
+ * acknowledgement — so the phone's `ready` vanished, no WebRTC offer was ever created, and the
+ * entire Wireless Camera feature was dead. The window is hidden, so nothing was visible either.
+ *
+ * Every other line of the log looked correct. The absence of a line was the only evidence, and that
+ * is precisely what a human does not notice. So the absence is now asserted on.
+ */
+async function watchdogHarness(): Promise<{
+  service: WirelessCameraService;
+  logs: string[];
+  post: (sessionId: string, token: string, body: unknown) => Promise<number>;
+  cleanup: () => Promise<void>;
+}> {
+  const dir = mkdtempSync(join(tmpdir(), 'ep-watchdog-'));
+  const logs: string[] = [];
+
+  const service = createWirelessCameraService({
+    userDataDir: dir,
+    port: 0,
+    bindAddress: '127.0.0.1',
+    readInterfaces: () => LAN,
+    onStatus: () => undefined,
+    onSignalToDesktop: () => undefined,
+    // Milliseconds, so the test does not wait five seconds for a timer.
+    offerTimeoutMs: 60,
+    onLog: (line) => logs.push(line),
+  });
+
+  const status = await service.start();
+  const port = Number(/:(\d+)$/.exec(status.origin ?? '')?.[1] ?? '0');
+  if (!Number.isInteger(port) || port <= 0) throw new Error(`no bound port in ${status.origin}`);
+
+  const previous = process.env['NODE_TLS_REJECT_UNAUTHORIZED'];
+  process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+
+  return {
+    service,
+    logs,
+    post: (sessionId, token, body) =>
+      fetch(`https://127.0.0.1:${port}/signal/send?s=${sessionId}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then((response) => response.status),
+    cleanup: async () => {
+      await service.stop();
+      if (previous === undefined) delete process.env['NODE_TLS_REJECT_UNAUTHORIZED'];
+      else process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = previous;
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+const claimed = (service: WirelessCameraService, label = 'Phone'): { id: string; token: string } => {
+  const ticket = service.createSession(label);
+  const session = service.registry.get(ticket.sessionId);
+  if (!session) throw new Error('the session must exist before it is claimed');
+
+  const result = service.registry.claim({
+    sessionId: ticket.sessionId,
+    token: session.pairing.token,
+    pin: ticket.pin,
+    deviceLabel: 'Android (Chrome)',
+  });
+  if (!result.ok) throw new Error(`the claim was refused: ${result.reason}`);
+
+  service.notifyClaim(ticket.sessionId, true);
+  return { id: ticket.sessionId, token: result.session.connectionToken };
+};
+
+test('A PHONE THAT IS READY BUT NEVER OFFERED TO IS REPORTED, NOT LEFT SILENT', async () => {
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+
+    // The phone says it has a camera. Nothing answers — this is the output renderer having
+    // crashed on mount.
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }), 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const complaint = h.logs.find((line) => line.includes('NO OFFER'));
+    if (complaint === undefined) {
+      throw new Error(`expected a NO OFFER diagnosis, got:\n${h.logs.join('\n')}`);
+    }
+    assert.match(complaint, new RegExp(phone.id), 'it names the session');
+    assert.match(complaint, /not listening/, 'and says what is actually wrong');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('a phone that IS offered to produces no complaint', async () => {
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }), 200);
+
+    // The output window answers, which is the whole point of the watchdog.
+    h.service.sendToPhone(phone.id, { kind: 'offer', sdp: 'v=0\r\n' });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(
+      h.logs.some((line) => line.includes('NO OFFER')),
+      false,
+      'a working handshake must not produce a warning',
+    );
+  } finally {
+    await h.cleanup();
+  }
+});

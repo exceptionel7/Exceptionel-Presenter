@@ -50,6 +50,12 @@ export interface WirelessCameraServiceOptions {
   onStatus: (status: WirelessStatus) => void;
   /** Delivers a phone message to the window that owns the peer connection. */
   onSignalToDesktop: (sessionId: string, message: SignalMessage) => void;
+  /**
+   * How long to wait for the output window to answer a phone's `ready` with an offer.
+   *
+   * Exists so the watchdog can be tested in milliseconds instead of seconds.
+   */
+  offerTimeoutMs?: number;
   /** Called when a phone appears or vanishes, so camera sources can be rebuilt. */
   onPhonesChanged?: (phones: WirelessPhone[]) => void;
   onLog?: (line: string) => void;
@@ -104,6 +110,41 @@ export function createWirelessCameraService(
   const registry = createPairingRegistry();
 
   const phones = new Map<string, PhoneRecord>();
+
+  /*
+   * Watches for the one failure that produces total silence: the output window is alive but not
+   * listening.
+   *
+   * A phone's `ready` is forwarded to the output renderer, which must answer with an offer. If that
+   * renderer threw during its first render it mounts no React tree, subscribes to no IPC events, and
+   * every message sent to it is simply absorbed — no error, no return value, nothing in any log.
+   * That exact fault (a missing import in OutputApp) made the whole feature dead while every other
+   * line of the trace looked correct. Naming it costs one timer.
+   */
+  const offerWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
+  const offerTimeoutMs = options.offerTimeoutMs ?? 5_000;
+
+  const clearOfferWatchdog = (sessionId: string): void => {
+    const timer = offerWatchdogs.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    offerWatchdogs.delete(sessionId);
+  };
+
+  const armOfferWatchdog = (sessionId: string): void => {
+    clearOfferWatchdog(sessionId);
+    const timer = setTimeout(() => {
+      offerWatchdogs.delete(sessionId);
+      log(
+        `[wireless-camera] NO OFFER for ${sessionId}: the phone is ready but the presentation ` +
+          'window produced no WebRTC offer. That window is loaded but not listening — look for a ' +
+          'renderer error logged above, since a render failure there is silent and invisible.',
+      );
+    }, offerTimeoutMs);
+    timer.unref?.();
+    offerWatchdogs.set(sessionId, timer);
+  };
+
   let server: WirelessCameraServer | null = null;
   let material: CertificateMaterial | null = null;
   let bound: { host: string; port: number } | null = null;
@@ -237,6 +278,8 @@ export function createWirelessCameraService(
         onPhoneMessage: (sessionId, message) => {
           // 'ready' means the phone HAS a camera track, not that we have received one. The
           // machine deliberately stays in `connecting` until a real remote track arrives.
+          if (message.kind === 'ready') armOfferWatchdog(sessionId);
+          if (message.kind === 'bye') clearOfferWatchdog(sessionId);
           options.onSignalToDesktop(sessionId, message);
         },
         onClaimAttempt: notifyClaim,
@@ -266,6 +309,7 @@ export function createWirelessCameraService(
     },
 
     async stop() {
+      for (const sessionId of [...offerWatchdogs.keys()]) clearOfferWatchdog(sessionId);
       if (server) await server.stop();
       server = null;
       bound = null;
@@ -319,6 +363,7 @@ export function createWirelessCameraService(
     },
 
     cancelSession(sessionId) {
+      clearOfferWatchdog(sessionId);
       // `remove`, not `revoke`: an explicitly cancelled pairing must free its slot at once.
       registry.remove(sessionId, 'Cancelled by the operator');
 
@@ -336,6 +381,7 @@ export function createWirelessCameraService(
     },
 
     disconnect(sessionId) {
+      clearOfferWatchdog(sessionId);
       // Section 18: the connection must actually terminate and credentials must be invalidated.
       if (server) server.sendToPhone(sessionId, { kind: 'bye', reason: 'Disconnected by the operator' });
       registry.revoke(sessionId, 'Disconnected by the operator');
@@ -346,6 +392,8 @@ export function createWirelessCameraService(
     },
 
     sendToPhone(sessionId, message) {
+      // An offer is proof the output window is listening, which is exactly what the watchdog asked.
+      if (message.kind === 'offer') clearOfferWatchdog(sessionId);
       server?.sendToPhone(sessionId, message);
     },
 

@@ -26,17 +26,41 @@ it can see the file. Every unit test passed, because the fault was in wiring rat
 
 ## The command
 
-Run from the repository root:
-
 ```bash
-tsc --noEmit --ignoreConfig --strict --erasableSyntaxOnly --noUncheckedIndexedAccess \
-  --target es2023 --module preserve --moduleResolution bundler \
-  --allowImportingTsExtensions --skipLibCheck --types "" \
-  tools/local-typecheck/electron-shims.d.ts tools/local-typecheck/node-shims.d.ts \
-  src/main/**/*.ts src/preload/*.ts src/shared/**/*.ts tests/*.test.ts
+npm run typecheck:local          # → node tools/local-typecheck/check.mjs
 ```
 
+`check.mjs` runs two passes and is the only invocation anyone should use. **Do not hand-roll a
+`tsc` command**; the previous practice of doing so is what caused the failure described below.
+
 `--types ""` stops `tsc` looking for `@types/*` packages that are absent.
+
+## The renderer pass, and the bug that made it necessary
+
+`src/renderer/**` imports React and Tailwind types that cannot be resolved without
+`node_modules`, so it is checked with `--noResolve`. That produces a great deal of unavoidable
+noise (TS2307 cannot-find-module, TS7026 unknown JSX, and so on), and the ad-hoc command in use
+before `check.mjs` coped by grepping for **syntax errors only** — `error TS1[0-9]{3}:`.
+
+That filter was blind to the single most likely mistake a human makes.
+
+`src/renderer/output/OutputApp.tsx` called `useWirelessCameraHost()` **without importing it**. The
+output renderer threw `ReferenceError` on its first render, mounted no React tree, and therefore
+subscribed to no IPC events. `webContents.send` has no acknowledgement, so every message main sent
+it was absorbed in silence: the phone's `ready` never produced a WebRTC offer, and the entire
+Wireless Camera feature was dead. The window is hidden, so there was nothing to see either.
+
+`tsc` had been reporting it as **TS2304** the whole time. The filter discarded it.
+
+`check.mjs` therefore uses an **allow-list of fatal codes** rather than a deny-list of noise —
+TS2304, TS2552, TS2448, TS2454 and friends — because a deny-list silently forgives every code
+nobody has thought about yet. Which is exactly what happened.
+
+## What this cannot catch
+
+Type *compatibility* inside the renderer: wrong props, a mismatched hook return, a bad Tailwind
+plugin type. Those need `npm run typecheck` with dependencies installed. `check.mjs` says so on
+every successful run rather than letting a green tick imply more than it proves.
 
 ## Deliberate looseness
 

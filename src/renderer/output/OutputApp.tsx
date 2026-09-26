@@ -19,6 +19,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { resolveAudienceVisibility, type Cue, type LiveState } from '@shared/domain/live-state.ts';
 import { client } from '@ui/client.ts';
 import { useIpcEvent } from '@ui/hooks.ts';
+import { useWirelessCameraHost } from './useWirelessCameraHost.ts';
 
 /** The design canvas every theme's geometry is expressed against. */
 const CANVAS = { width: 1920, height: 1080 } as const;
