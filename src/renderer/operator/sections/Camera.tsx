@@ -70,18 +70,46 @@ export function CameraSection(): JSX.Element {
   const phones = status?.phones ?? [];
   const pairingPhone = phones.find((phone) => phone.state === 'pairing' || phone.state === 'authenticating');
 
-  // A pairing that expires or completes must clear the QR code, so the operator is never looking
-  // at a code that no longer works.
+  /*
+   * Clears the QR code once pairing has actually moved on.
+   *
+   * Only when the phone IS FOUND and has advanced. A missing phone must NOT clear the ticket:
+   * the createSession response and the wireless:status broadcast are independent IPC messages
+   * with no ordering guarantee, so the response frequently arrives while `status` still predates
+   * the new session. Treating "not found" as "finished" discarded the QR code before it ever
+   * rendered — which is exactly what happened.
+   */
   useEffect(() => {
     if (!ticket) return;
     const phone = phones.find((candidate) => candidate.sessionId === ticket.sessionId);
-    if (!phone || (phone.state !== 'pairing' && phone.state !== 'authenticating')) setTicket(null);
+    if (!phone) return;
+    if (phone.state !== 'pairing' && phone.state !== 'authenticating') setTicket(null);
   }, [phones, ticket]);
 
   const addPhone = useCallback(async () => {
+    /*
+     * Cancels any pairing already in progress first. Only one QR code can be on screen, and its
+     * token is never stored client-side, so an abandoned pairing session is unrecoverable — it
+     * would just sit there occupying one of the four phone slots.
+     */
+    for (const phone of phones) {
+      if (phone.state === 'pairing' || phone.state === 'authenticating') {
+        await cancelSession.run({ sessionId: phone.sessionId });
+      }
+    }
+
     const created = await createSession.run({ label: `Phone ${(status?.phones.length ?? 0) + 1}` });
     if (created) setTicket(created);
-  }, [createSession, status]);
+  }, [createSession, cancelSession, phones, status]);
+
+  /** Clears a finished or failed phone from the list. */
+  const removePhone = useCallback(
+    async (sessionId: string) => {
+      await cancelSession.run({ sessionId });
+      setSelected(null);
+    },
+    [cancelSession],
+  );
 
   const wirelessSources = sources.filter((source) => source.isWireless);
   const localSources = sources.filter((source) => !source.isWireless);
@@ -192,6 +220,7 @@ export function CameraSection(): JSX.Element {
                 const sessionId = selectedSource.id.replace(/^phone:/, '');
                 void disconnect.run({ sessionId });
               }}
+              onRemove={() => void removePhone(selectedSource.id.replace(/^phone:/, ''))}
             />
           ) : (
             <EmptyState
@@ -368,6 +397,7 @@ function PreviewPanel({
   onGoLive,
   onStop,
   onDisconnect,
+  onRemove,
 }: {
   source: CameraSource;
   phone: WirelessPhone | undefined;
@@ -376,6 +406,7 @@ function PreviewPanel({
   onGoLive: () => void;
   onStop: () => void;
   onDisconnect: () => void;
+  onRemove: () => void;
 }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const state = (phone?.state ?? 'disconnected') as WirelessState;
@@ -454,10 +485,23 @@ function PreviewPanel({
             <button type="button" className="btn-secondary" onClick={onStop} disabled={busy || !isLive}>
               Stop
             </button>
-            <button type="button" className="btn-ghost text-status-error" onClick={onDisconnect} disabled={busy}>
-              Disconnect
-            </button>
+            {/* A finished phone is cleared rather than disconnected — there is nothing left to cut. */}
+            {state === 'stopped' || state === 'failed' || state === 'disconnected' ? (
+              <button type="button" className="btn-ghost" onClick={onRemove} disabled={busy}>
+                Remove from list
+              </button>
+            ) : (
+              <button type="button" className="btn-ghost text-status-error" onClick={onDisconnect} disabled={busy}>
+                Disconnect
+              </button>
+            )}
           </div>
+
+          {(state === 'stopped' || state === 'failed') && (
+            <p className="mt-3 text-[12px] text-silver-600">
+              This phone is no longer connected. Use Add Phone Camera to pair it again.
+            </p>
+          )}
 
           {phone?.deviceLabel && (
             <p className="mt-3 text-[11px] text-silver-700">

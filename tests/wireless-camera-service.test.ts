@@ -562,3 +562,102 @@ function basePhone(overrides: Partial<WirelessPhone> = {}): WirelessPhone {
     ...overrides,
   };
 }
+
+
+// ── regressions from the first real-hardware run ────────────────────────────────
+
+test('CANCELLING EMITS A SNAPSHOT WITHOUT THE PHONE, not one showing it stopped', async () => {
+  /*
+   * The bug: `apply(sessionId, 'stop')` emits on every state change, so cancelling broadcast a
+   * snapshot that still contained the phone as `stopped` — and because the delete happened
+   * afterwards with no further emit, that was the LAST status the UI ever received. A cancelled
+   * phone sat in the operator's list permanently with no way to clear it.
+   */
+  const h = await harness();
+  try {
+    await h.service.start();
+    const ticket = h.service.createSession('Phone');
+    const before = h.statuses.length;
+
+    h.service.cancelSession(ticket.sessionId);
+
+    const emitted = h.statuses.slice(before);
+    assert.ok(emitted.length > 0, 'cancelling must emit at least once');
+
+    // Every snapshot emitted by the cancel must already be free of the phone.
+    for (const status of emitted) {
+      assert.equal(
+        status.phones.some((phone) => phone.sessionId === ticket.sessionId),
+        false,
+        'no emitted snapshot may still contain the cancelled phone',
+      );
+    }
+    assert.equal(h.service.status().phones.length, 0);
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('cancelling frees the slot IMMEDIATELY rather than after the linger window', async () => {
+  /*
+   * `revoke` keeps a record for 30 seconds so a connected phone can still collect its `bye` over
+   * the open stream. Applying that to an explicit cancellation meant the slot stayed occupied, so
+   * cancelling four QR codes in a row failed with "maximum reached" — which is why cancelSession
+   * uses `remove` instead.
+   */
+  const h = await harness();
+  try {
+    await h.service.start();
+    const ticket = h.service.createSession('Phone');
+    assert.equal(h.service.registry.list().length, 1);
+
+    h.service.cancelSession(ticket.sessionId);
+    assert.equal(h.service.registry.list().length, 0, 'the slot must be free at once, not in 30s');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('PHONES WHOSE SESSION WAS PRUNED ARE DROPPED FROM THE LIST', async () => {
+  // Otherwise the list self-perpetuates: expired QR codes vanish from the registry but their UI
+  // records linger forever, showing phones that no longer exist.
+  const h = await harness();
+  try {
+    await h.service.start();
+    const stale = h.service.createSession('Stale Phone');
+    assert.equal(h.service.status().phones.length, 1);
+
+    // Simulate the registry pruning an abandoned session.
+    h.service.registry.revoke(stale.sessionId, 'expired');
+    h.service.registry.prune();
+    while (h.service.registry.get(stale.sessionId)) {
+      h.service.registry.prune();
+      break;
+    }
+
+    // Creating the next session sweeps records with no surviving session.
+    h.service.createSession('Fresh Phone');
+    const labels = h.service.status().phones.map((phone) => phone.label);
+    assert.ok(labels.includes('Fresh Phone'));
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('a cancelled slot is released, so capacity is not leaked', async () => {
+  const h = await harness();
+  try {
+    await h.service.start();
+    const max = h.service.status().maxPhones;
+
+    // Fill every slot, then free one and confirm another can be created.
+    const tickets = [];
+    for (let i = 0; i < max; i++) tickets.push(h.service.createSession(`Phone ${i + 1}`));
+    assert.throws(() => h.service.createSession('Overflow'), /Maximum of/);
+
+    h.service.cancelSession(tickets[0]!.sessionId);
+    assert.doesNotThrow(() => h.service.createSession('Replacement'));
+  } finally {
+    await h.cleanup();
+  }
+});

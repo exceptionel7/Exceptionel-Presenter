@@ -81,8 +81,20 @@ export interface PairingRegistry {
   recordState(sessionId: string, state: PeerState): LiveSession | null;
   recordMedia(sessionId: string, media: LiveSession['media']): void;
   touch(sessionId: string): void;
-  /** Ends a session and invalidates its tokens. */
+  /**
+   * Ends a session and invalidates its tokens, keeping the record briefly so a connected phone
+   * can still collect its `bye` over the open stream.
+   */
   revoke(sessionId: string, reason: string): void;
+  /**
+   * Ends a session and deletes it immediately, freeing its capacity slot.
+   *
+   * For operator-initiated cancellation of a pairing that never connected. `revoke` alone leaves
+   * the record in place for 30 seconds so a live phone can be told goodbye — which means
+   * cancelling four QR codes in a row would exhaust the slots and fail with a confusing
+   * "maximum reached" error.
+   */
+  remove(sessionId: string, reason: string): void;
   /** Drops expired, unclaimed sessions. Returns the ids removed. */
   prune(): string[];
   /** Ends every session — called on app quit (Section 20, and test 12). */
@@ -219,6 +231,12 @@ export function createPairingRegistry(options: RegistryOptions = {}): PairingReg
       session.connectionToken = '';
       session.outbound = [{ kind: 'bye', reason }];
       session.lifecycle = { ...session.lifecycle, state: 'closed', lastChangeAt: now() };
+    },
+
+    remove(sessionId, reason) {
+      // Revoke first so any in-flight request carrying the old token is rejected, then delete.
+      registry.revoke(sessionId, reason);
+      sessions.delete(sessionId);
     },
 
     prune() {

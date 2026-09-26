@@ -279,6 +279,17 @@ export function createWirelessCameraService(
       if (!server || !bound) throw new Error('Wireless Camera is not running.');
       if (!material) throw new Error('No local certificate is available.');
 
+      /*
+       * Drops phones whose underlying session the registry has already pruned.
+       *
+       * Without this the list self-perpetuates: expired QR codes and revoked sessions vanish from
+       * the registry but their UI records linger forever, so the operator sees phones that no
+       * longer exist and cannot clear them.
+       */
+      for (const sessionId of [...phones.keys()]) {
+        if (!registry.get(sessionId)) phones.delete(sessionId);
+      }
+
       const session = registry.create(label);
       phones.set(session.pairing.id, {
         sessionId: session.pairing.id,
@@ -308,11 +319,19 @@ export function createWirelessCameraService(
     },
 
     cancelSession(sessionId) {
-      registry.revoke(sessionId, 'Cancelled by the operator');
-      apply(sessionId, 'stop');
+      // `remove`, not `revoke`: an explicitly cancelled pairing must free its slot at once.
+      registry.remove(sessionId, 'Cancelled by the operator');
+
+      /*
+       * Removed BEFORE emitting. `apply` emits on every state change, so stopping first
+       * broadcast a snapshot still containing the phone as `stopped`, and that was the last
+       * status the UI ever received — leaving a cancelled phone stuck in the list forever with
+       * no way to clear it.
+       */
       phones.delete(sessionId);
       const status = buildStatus();
       options.onStatus(status);
+      options.onPhonesChanged?.(status.phones);
       return status;
     },
 
