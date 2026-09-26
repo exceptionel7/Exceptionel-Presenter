@@ -251,6 +251,20 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       wireless.sendToPhone(sessionId, parsed.value);
     },
 
+    /**
+     * The output window reporting a real remote track.
+     *
+     * The ONLY route to the `connected` state, which is why it is its own channel: previously the
+     * output window signalled `{kind:'state', state:'connected'}`, that mapped to
+     * `connectionRestored`, and no such transition exists from `connecting` — so the machine could
+     * never reach `connected` no matter how good the video was.
+     */
+    'wireless:track': (payload) => {
+      const { sessionId } = payload as { sessionId: string };
+      console.log(`[wireless-camera] remote track received (${sessionId})`);
+      requireWireless(context).markTrackReceived(sessionId);
+    },
+
     // ── unified camera sources ───────────────────────────────────────────────────
     'camera:sources': () => context.cameraSources?.() ?? [],
     'camera:assign': (payload) => {

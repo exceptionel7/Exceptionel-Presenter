@@ -659,3 +659,118 @@ test('the server binds only the interface it was given', async () => {
     await h.stop();
   }
 });
+
+
+// ── stream replacement (the "Reconnecting for ever" bug) ────────────────────────
+
+/**
+ * These two tests pin down the failure that made a working phone camera sit in RECONNECTING
+ * indefinitely while no offer could reach it.
+ *
+ * `EventSource` reconnects by itself after any Wi-Fi blip, so a second stream for one session is
+ * ordinary, expected traffic — not an error. Two things had to be true for it to be survivable, and
+ * neither was:
+ *   1. the late `close` event for the OLD request must not tear down the NEW stream;
+ *   2. losing a signalling stream must not be reported as losing the camera.
+ */
+
+const pairedSession = (h: Harness): { id: string; cookie: string } => {
+  const session = h.registry.create('Phone');
+  h.registry.claim({
+    sessionId: session.pairing.id,
+    token: session.pairing.token,
+    pin: session.pairing.pin,
+    deviceLabel: 'Phone',
+  });
+  return { id: session.pairing.id, cookie: `ep_camera=${session.connectionToken}` };
+};
+
+const readUntil = async (
+  response: Response,
+  needle: string,
+): Promise<{ buffer: string; cancel: () => Promise<void> }> => {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (let i = 0; i < 20 && !buffer.includes(needle); i++) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+  }
+  return { buffer, cancel: () => reader.cancel() };
+};
+
+test('A RECONNECTED SIGNALLING STREAM STILL RECEIVES MESSAGES', async () => {
+  const h = await harness();
+  try {
+    const session = pairedSession(h);
+
+    await withTls(async () => {
+      // First stream, as the phone opens it after pairing.
+      const first = await fetch(`${h.base}/signal/stream?s=${session.id}`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(first.status, 200);
+      const firstRead = await readUntil(first, ': connected');
+      assert.match(firstRead.buffer, /: connected/);
+
+      // The phone's EventSource reconnects. This is the case that used to destroy itself: the old
+      // request's `close` fired after the new stream was registered and removed it again.
+      const second = await fetch(`${h.base}/signal/stream?s=${session.id}`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(second.status, 200);
+
+      // Give Node time to deliver the stale `close` for the superseded request.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // The whole point: an offer sent now must reach the phone.
+      h.server.sendToPhone(session.id, { kind: 'offer', sdp: VALID_SDP });
+      const secondRead = await readUntil(second, '"offer"');
+      assert.match(
+        secondRead.buffer,
+        /"kind":"offer"/,
+        'the reconnected stream must still be the one that receives the offer',
+      );
+
+      await firstRead.cancel().catch(() => undefined);
+      await secondRead.cancel();
+    });
+  } finally {
+    await h.stop();
+  }
+});
+
+test('losing a signalling stream is NOT reported as losing the camera', async () => {
+  const h = await harness();
+  try {
+    const session = pairedSession(h);
+
+    await withTls(async () => {
+      const response = await fetch(`${h.base}/signal/stream?s=${session.id}`, {
+        headers: { cookie: session.cookie },
+      });
+      const read = await readUntil(response, ': connected');
+      await read.cancel();
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+
+    /*
+     * Video travels phone → Wi-Fi → desktop and is entirely unaffected by this HTTP connection
+     * dropping. Reporting a peer-state disconnect here knocked a live camera into `reconnecting`
+     * and cleared its metrics, and nothing could move it back: the desktop peer had never changed
+     * state, so no recovery event was ever emitted.
+     *
+     * The authoritative signals remain the desktop's own RTCPeerConnection state and an explicit
+     * `bye`, both of which still fire when a phone genuinely disappears.
+     */
+    assert.deepEqual(
+      h.phoneStates,
+      [],
+      'a dropped signalling stream must not be reported as a peer-state change',
+    );
+  } finally {
+    await h.stop();
+  }
+});

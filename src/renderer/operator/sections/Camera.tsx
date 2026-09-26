@@ -12,6 +12,7 @@ import type { CameraSource } from '@shared/domain/camera.ts';
 import { describeSource } from '@shared/domain/camera.ts';
 import {
   describeWirelessState,
+  hasStream,
   wirelessStateTone,
   type WirelessState,
 } from '@shared/domain/wireless-camera-state.ts';
@@ -412,6 +413,20 @@ function PreviewPanel({
   const state = (phone?.state ?? 'disconnected') as WirelessState;
   const isLive = source.assignment === 'live';
 
+  /*
+   * A stream OBJECT is not a picture. The loopback stream arrives as soon as the answer is applied,
+   * while the track is still muted, so painting it then would show a black rectangle that looks
+   * exactly like a broken camera. `hasStream` is true only once real frames have been reported, so
+   * gating on both is what keeps the preview honest.
+   */
+  const showVideo = stream !== null && hasStream(state);
+  const placeholder =
+    state === 'connecting' || state === 'authenticating'
+      ? 'Waiting for video…'
+      : state === 'reconnecting'
+        ? 'Reconnecting…'
+        : 'No video signal';
+
   useEffect(() => {
     const element = videoRef.current;
     if (!element) return;
@@ -439,17 +454,21 @@ function PreviewPanel({
       >
         <div className="p-4">
           <div className="relative aspect-video rounded-lg overflow-hidden bg-black border border-ink-700">
-            {stream ? (
+            {showVideo ? (
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0 grid place-items-center">
-                {/* No placeholder image and no simulated frames — if there is no stream, say so. */}
-                <p className="text-[12px] text-silver-700 uppercase tracking-[0.18em]">
-                  {state === 'reconnecting' ? 'Reconnecting…' : 'No video signal'}
-                </p>
+                {/* No placeholder image and no simulated frames — if there is no picture, say so. */}
+                <p className="text-[12px] text-silver-700 uppercase tracking-[0.18em]">{placeholder}</p>
               </div>
             )}
-            {isLive && stream && (
+            {state === 'reconnecting' && showVideo && (
+              <div className="absolute top-3 right-3 px-2 py-1 rounded bg-ink-950/80 text-status-ready text-[10px] font-bold tracking-widest">
+                {/* The picture on screen is the last frame received, not a current one. */}
+                RECONNECTING
+              </div>
+            )}
+            {isLive && showVideo && (
               <div className="absolute top-3 left-3 px-2 py-1 rounded bg-status-live text-white text-[10px] font-bold tracking-widest">
                 ● LIVE
               </div>
@@ -478,7 +497,7 @@ function PreviewPanel({
               className="btn-primary"
               onClick={onGoLive}
               // A camera with no stream cannot go live; that would black the projector.
-              disabled={busy || isLive || !stream}
+              disabled={busy || isLive || !showVideo}
             >
               Go Live
             </button>

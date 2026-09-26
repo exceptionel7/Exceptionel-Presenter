@@ -120,21 +120,66 @@ test('THE AUDIENCE OUTPUT WINDOW CANNOT CONTROL WIRELESS CAMERAS', async () => {
   }
 });
 
-test('the output window CAN do exactly the two things it needs, and nothing more', async () => {
-  // It owns the phone's peer connection, so it must be able to answer the phone and republish to
-  // the operator preview. Both are signalling only.
+test('the output window CAN do exactly what it needs, and nothing more', async () => {
+  /*
+   * An exact set, not a subset. Every entry below has been reviewed as read-only or
+   * signalling-only; adding anything to the allow-list must therefore fail this test and force
+   * that review to happen deliberately rather than by accident.
+   */
+  const reviewed = [
+    // read-only
+    'live:getState',
+    'themes:list',
+    'camera:profiles',
+    // signalling only — SDP and ICE, never library data
+    'wireless:signal',
+    'wireless:track',
+    'media:relay',
+  ].sort();
+
+  assert.deepEqual([...OUTPUT_ALLOWED_CHANNELS].sort(), reviewed);
+
+  // It owns the phone's peer connection, so it must be able to answer the phone, report a real
+  // track, and republish to the operator preview.
   assert.ok(OUTPUT_ALLOWED_CHANNELS.includes('wireless:signal'));
+  assert.ok(OUTPUT_ALLOWED_CHANNELS.includes('wireless:track'));
   assert.ok(OUTPUT_ALLOWED_CHANNELS.includes('media:relay'));
 
-  for (const channel of OUTPUT_ALLOWED_CHANNELS) {
-    assert.ok(
-      channel === 'wireless:signal' ||
-        channel === 'media:relay' ||
-        channel === 'live:getState' ||
-        channel === 'themes:list' ||
-        channel === 'camera:profiles',
-      `unexpected channel in the audience allow-list: ${channel}`,
+  // And nothing that writes. The audience screen must never be one bug away from editing the
+  // library or ending a session.
+  for (const channel of ['songs:save', 'songs:delete', 'services:save', 'settings:set', 'live:dispatch', 'wireless:stop', 'wireless:disconnect', 'camera:assign'] as const) {
+    assert.equal(
+      OUTPUT_ALLOWED_CHANNELS.includes(channel as never),
+      false,
+      `${channel} must never be reachable from the audience output`,
     );
+  }
+});
+
+test('the output window reaching `connected` goes through wireless:track, not a peer-state report', async () => {
+  const h = await harness();
+  try {
+    await h.call('wireless:start', undefined);
+    const ticket = unwrap<{ sessionId: string }>(await h.call('wireless:createSession', { label: 'Phone' }));
+    h.service.notifyClaim(ticket.sessionId, true);
+    assert.equal(h.service.status().phones[0]?.state, 'connecting');
+
+    /*
+     * The old route. A completed handshake reported as a peer state must NOT be able to claim a
+     * working camera: that is exactly the "connected with no picture" failure Section 24 forbids.
+     */
+    unwrap(await h.call('wireless:signal', { sessionId: ticket.sessionId, message: { kind: 'state', state: 'connected' } }, 'output'));
+    assert.equal(
+      h.service.status().phones[0]?.state,
+      'connecting',
+      'a handshake is not a picture',
+    );
+
+    // The real route, called by the output window when RTP actually arrives.
+    unwrap(await h.call('wireless:track', { sessionId: ticket.sessionId }, 'output'));
+    assert.equal(h.service.status().phones[0]?.state, 'connected');
+  } finally {
+    await h.cleanup();
   }
 });
 

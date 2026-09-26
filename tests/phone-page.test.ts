@@ -100,3 +100,26 @@ test('the page never references an external origin', () => {
     assert.deepEqual(matches, [], `${name} must not fetch anything from the internet`);
   }
 });
+
+
+test('EARLY ICE CANDIDATES ARE QUEUED, NOT DISCARDED', () => {
+  /*
+   * The desktop begins trickling candidates the instant it sets its own local description — before
+   * this page has even received the offer. `addIceCandidate` rejects while there is no remote
+   * description, so the original code threw those candidates away. On a LAN with no STUN or TURN
+   * they are the only candidates there are, which left ICE with nothing to pair and produced a
+   * connection that negotiated successfully and then carried no video.
+   */
+  assert.match(PHONE_PAGE_JS, /var pendingIce = \[\]/, 'a queue exists');
+  assert.match(PHONE_PAGE_JS, /if \(!pc\.remoteDescription\) \{\s*pendingIce\.push\(candidate\)/);
+  assert.match(PHONE_PAGE_JS, /drainPendingIce/, 'and is drained once the offer is applied');
+  // Drained after the answer is posted, so the desktop has the answer before the candidates.
+  assert.match(PHONE_PAGE_JS, /post\(\{ kind: 'answer', sdp: answer\.sdp \}\);[\s\S]{0,120}drainPendingIce\(\)/);
+});
+
+test('the phone shows the ICE state, so a photograph of the page is diagnosable', () => {
+  // "checking" that never becomes "connected" means the devices cannot reach each other — usually
+  // client isolation on the access point. That is invisible without showing the ICE state.
+  assert.match(PHONE_PAGE_JS, /oniceconnectionstatechange/);
+  assert.match(PHONE_PAGE_JS, /pc\.connectionState \+ ' · ' \+ pc\.iceConnectionState/);
+});

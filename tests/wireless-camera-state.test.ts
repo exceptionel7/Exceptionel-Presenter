@@ -164,6 +164,30 @@ test('a track arriving during reconnection counts as recovery', () => {
   assert.equal(run('reconnecting', 'trackReceived'), 'connected');
 });
 
+test('A CAMERA THAT NEVER CONNECTED CANNOT SAY "RECONNECTING"', () => {
+  /*
+   * ICE reports `disconnected` routinely while it is still working through candidate pairs. Letting
+   * that move `connecting` to `reconnecting` told the operator a picture had existed and was on its
+   * way back, when the handshake had simply not finished — and it also hid the real problem behind a
+   * reassuring label.
+   */
+  assert.equal(canTransition('connecting', 'connectionInterrupted'), false);
+
+  const refused = transition('connecting', 'connectionInterrupted');
+  assert.equal(refused.state, 'connecting', 'it stays honest');
+  assert.equal(refused.changed, false);
+  assert.ok(refused.rejected, 'and the refusal is logged rather than swallowed');
+
+  // The two genuine outcomes of negotiation are still reachable.
+  assert.equal(run('connecting', 'trackReceived'), 'connected');
+  assert.equal(run('connecting', 'connectionFailed'), 'failed');
+
+  // And reconnecting remains reachable from every state that really did have a picture.
+  for (const state of ['connected', 'live'] as const) {
+    assert.equal(canTransition(state, 'connectionInterrupted'), true, state);
+  }
+});
+
 // ── going live (Section 13) ─────────────────────────────────────────────────────
 
 test('only a camera with a stream can go live', () => {

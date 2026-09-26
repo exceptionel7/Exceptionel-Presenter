@@ -42,14 +42,14 @@ export function useWirelessCameraHost(): WirelessCameraHost {
           // Republish to the operator preview. Re-firing on a camera switch is expected and
           // simply replaces the previous loopback connection.
           publisher.publish(sourceIdForSession(sessionId), stream);
-
-          // Tell main a REAL track arrived. This is the only path to the `connected` state, so
-          // a completed handshake with no media can never look like a working camera.
-          void client.invoke('wireless:signal', {
-            sessionId,
-            message: { kind: 'state', state: 'connected' },
-          });
           bump((value) => value + 1);
+        },
+
+        onMedia: (sessionId) => {
+          // A dedicated channel, not a peer-state report: this is the only route to `connected`,
+          // so it must not be confusable with anything else. It fires when RTP actually arrives,
+          // which is why `connected` in the operator UI means a picture and not a handshake.
+          void client.invoke('wireless:track', { sessionId });
         },
 
         onState: (sessionId, state) => {

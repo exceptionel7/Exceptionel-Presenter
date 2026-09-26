@@ -356,6 +356,43 @@ for our own windows, and on macOS checks
 `systemPreferences.getMediaAccessStatus('camera')` so we can distinguish "user denied at
 OS level" from "device busy" — different problems, different fixes.
 
+### Wireless camera: two independent channels
+
+The phone camera has a **signalling** channel and a **media** channel, and they are
+deliberately not coupled:
+
+| | Path | Carries | Fails when |
+|---|---|---|---|
+| Signalling | phone ⇄ HTTPS/SSE ⇄ main ⇄ output window | SDP, ICE, state | the HTTP connection drops |
+| Media | phone → Wi-Fi → output window | RTP video/audio | the devices stop reaching each other |
+
+Two rules follow, both learned the hard way:
+
+1. **A dropped signalling stream is not a lost camera.** `EventSource` reconnects by
+   itself after any Wi-Fi blip. Treating that as a disconnect pushed a live feed into
+   `reconnecting` and cleared its metrics, and nothing moved it back — the desktop peer
+   had never changed state, so no recovery event was ever emitted. The authoritative
+   signals that a camera is gone are the desktop's own `RTCPeerConnection` state and an
+   explicit `bye`.
+2. **A signalling stream is identified, not just keyed by session.** Node fires `close`
+   on a superseded request *after* its replacement is registered, so a session-keyed
+   teardown destroyed the stream it had just created — and then the phone's automatic
+   retry did it again, for ever.
+
+### What "connected" means
+
+`connected` is reached only by `wireless:track`, which the output window sends when the
+receiving track **unmutes** — the first RTP packet. Not when `ontrack` fires: that
+happens as soon as the answer is applied, before any media exists. The operator preview
+gates on `hasStream(state)` for the same reason, so a negotiated-but-silent connection
+shows "Waiting for video…" rather than a black rectangle that looks like a working
+camera.
+
+ICE candidates are **queued on both ends** until a remote description exists. The desktop
+starts trickling the moment it sets its local offer, which is before the phone has the
+offer at all; `addIceCandidate` rejects in that window, and with no STUN or TURN
+configured those host candidates are the only ones there will ever be.
+
 ---
 
 ## 8. Autosave & crash recovery

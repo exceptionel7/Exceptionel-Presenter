@@ -210,6 +210,16 @@ export const PHONE_PAGE_JS = String.raw`/*
   var abortStream = null;
   var statsTimer = null;
 
+  /*
+   * ICE candidates that arrived before the offer was applied.
+   *
+   * The desktop starts trickling candidates the moment it sets its own local description, which is
+   * BEFORE this page has even received the offer. addIceCandidate rejects while there is no remote
+   * description, so without this queue the earliest - and on a LAN, the only - host candidates were
+   * thrown away and the connection had nothing to pair with.
+   */
+  var pendingIce = [];
+
   var el = function (id) { return document.getElementById(id); };
 
   // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -405,6 +415,14 @@ export const PHONE_PAGE_JS = String.raw`/*
     });
   }
 
+  function drainPendingIce() {
+    var queued = pendingIce;
+    pendingIce = [];
+    queued.forEach(function (candidate) {
+      if (pc) pc.addIceCandidate(candidate).catch(function () { /* survivable */ });
+    });
+  }
+
   function handleSignal(message) {
     if (!message || !message.kind) return;
 
@@ -414,16 +432,25 @@ export const PHONE_PAGE_JS = String.raw`/*
         .then(function () { return pc.createAnswer(); })
         .then(function (answer) { return pc.setLocalDescription(answer).then(function () { return answer; }); })
         .then(function (answer) { return post({ kind: 'answer', sdp: answer.sdp }); })
+        .then(function () { return drainPendingIce(); })
         .catch(function (error) { showError('camera-error', 'Could not negotiate video: ' + error.message); });
       return;
     }
 
     if (message.kind === 'ice' && pc && message.candidate) {
-      pc.addIceCandidate({
+      var candidate = {
         candidate: message.candidate,
         sdpMid: message.sdpMid || null,
         sdpMLineIndex: typeof message.sdpMLineIndex === 'number' ? message.sdpMLineIndex : null
-      }).catch(function () { /* a rejected candidate is survivable */ });
+      };
+
+      // Queued rather than dropped when the offer has not been applied yet - see pendingIce.
+      if (!pc.remoteDescription) {
+        pendingIce.push(candidate);
+        return;
+      }
+
+      pc.addIceCandidate(candidate).catch(function () { /* a rejected candidate is survivable */ });
       return;
     }
 
@@ -510,6 +537,7 @@ export const PHONE_PAGE_JS = String.raw`/*
     // No iceServers: both devices are on the same LAN, so host candidates suffice and nothing
     // reaches out to the internet.
     pc = new RTCPeerConnection({ iceServers: [] });
+    pendingIce = [];
 
     stream.getTracks().forEach(function (track) { pc.addTrack(track, stream); });
 
@@ -523,10 +551,20 @@ export const PHONE_PAGE_JS = String.raw`/*
       });
     };
 
+    /*
+     * The ICE state is shown alongside the peer state because they fail differently and the fix is
+     * different too. "checking" that never becomes "connected" means the two devices cannot reach
+     * each other - usually client isolation on the access point - and no application setting will
+     * change that. Putting it on screen is what makes a photograph of this page diagnosable.
+     */
+    pc.oniceconnectionstatechange = function () {
+      if (pc) el('stat-conn').textContent = pc.connectionState + ' · ' + pc.iceConnectionState;
+    };
+
     pc.onconnectionstatechange = function () {
       var state = pc.connectionState;
       post({ kind: 'state', state: state });
-      el('stat-conn').textContent = state;
+      el('stat-conn').textContent = state + ' · ' + pc.iceConnectionState;
 
       if (state === 'connected') {
         connected = true;
@@ -638,6 +676,7 @@ export const PHONE_PAGE_JS = String.raw`/*
      */
     stopStats();
     connected = false;
+    pendingIce = [];
 
     if (stream) {
       stream.getTracks().forEach(function (track) { track.stop(); });

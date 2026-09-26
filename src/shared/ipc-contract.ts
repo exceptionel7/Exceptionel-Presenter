@@ -126,6 +126,14 @@ export interface IpcRequestMap {
   'wireless:disconnect': { req: { sessionId: string }; res: WirelessStatus };
   /** Desktop → phone signalling, sent from the window that owns the peer connection. */
   'wireless:signal': { req: { sessionId: string; message: unknown }; res: void };
+  /**
+   * Reports that a REAL remote media track has arrived in the output window.
+   *
+   * A dedicated channel rather than a signalling message, because this is the only route to the
+   * `connected` state and it must not be confusable with a peer-state report. A completed
+   * handshake is not a picture.
+   */
+  'wireless:track': { req: { sessionId: string }; res: void };
 
   // camera sources shared across local and wireless providers
   'camera:sources': { req: void; res: CameraSource[] };
@@ -233,6 +241,7 @@ export const IPC_CHANNELS = Object.freeze([
   'wireless:cancelSession',
   'wireless:disconnect',
   'wireless:signal',
+  'wireless:track',
   'camera:sources',
   'camera:assign',
   'media:relay',
@@ -272,6 +281,7 @@ export const OUTPUT_ALLOWED_CHANNELS = Object.freeze([
    * remains unable to mutate anything.
    */
   'wireless:signal',
+  'wireless:track',
   'media:relay',
 ] as const satisfies readonly IpcChannel[]);
 

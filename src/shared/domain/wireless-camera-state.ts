@@ -82,7 +82,15 @@ const TRANSITIONS: Readonly<Record<WirelessState, Partial<Record<WirelessEvent, 
   connecting: {
     trackReceived: 'connected',
     connectionFailed: 'failed',
-    connectionInterrupted: 'reconnecting',
+    /*
+     * `connectionInterrupted` is deliberately absent.
+     *
+     * ICE reports `disconnected` routinely while it is still working through candidate pairs, and
+     * a camera that has never carried a frame cannot honestly be described as "Reconnecting".
+     * Showing that told the operator a picture had existed and was coming back, when in fact the
+     * handshake had simply not finished. Negotiation stays `connecting` until either a real track
+     * arrives or the connection genuinely fails.
+     */
     stop: 'stopped',
   },
   connected: {

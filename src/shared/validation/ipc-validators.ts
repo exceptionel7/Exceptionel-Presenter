@@ -282,6 +282,7 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
    * the wire protocol instead of two that could drift apart.
    */
   'wireless:signal': vObject({ sessionId: vPairingSessionId(), message: vUnknown() }),
+  'wireless:track': vObject({ sessionId: vPairingSessionId() }),
 
   'camera:sources': vVoid(),
   'camera:assign': vObject({

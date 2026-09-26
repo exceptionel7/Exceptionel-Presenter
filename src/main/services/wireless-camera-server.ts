@@ -62,6 +62,14 @@ export interface WirelessCameraServer {
 
 interface Attached {
   sessionId: string;
+  /**
+   * Distinguishes one SSE stream from the next for the SAME session.
+   *
+   * Without it, every teardown path keyed off the session id alone, and a phone that reopened its
+   * EventSource — which it does by itself after any Wi-Fi blip — destroyed the connection it had
+   * just made. See the note on the replacement path below.
+   */
+  id: number;
   write: (chunk: string) => boolean;
   end: () => void;
 }
@@ -93,6 +101,8 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
   let server: Server | null = null;
   let address: { host: string; port: number } | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** Monotonic, so two streams for one session are never confused for each other. */
+  let streamSequence = 0;
 
   const flush = (sessionId: string): void => {
     const attached = streams.get(sessionId);
@@ -102,15 +112,31 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
         attached.write(encodeSseFrame(message));
       } catch {
         // A broken pipe means the phone went away; the disconnect path handles it.
-        detach(sessionId);
+        detach(attached);
         return;
       }
     }
   };
 
-  const detach = (sessionId: string): void => {
-    const attached = streams.get(sessionId);
-    if (!attached) return;
+  /**
+   * Tears down ONE specific stream, and only if it is still the current one.
+   *
+   * The identity check is the whole point. Node fires `close` on a request AFTER the handler that
+   * replaced it has already run, so a session-id-keyed teardown would remove the stream that had
+   * just been attached and report a disconnect for a phone that was sitting there perfectly
+   * healthy. That produced a self-sustaining loop: the fresh stream was closed, the phone's
+   * EventSource reconnected, the reconnect closed itself, and the operator watched the camera say
+   * "Reconnecting" for ever while no offer could reach the phone.
+   */
+  const detach = (attached: Attached): void => {
+    const { sessionId } = attached;
+    if (streams.get(sessionId) !== attached) {
+      // A stale close for a stream that has already been superseded. Nothing to report: the
+      // session is alive on a newer stream.
+      log(`[wireless-camera] ignoring stale stream close for ${sessionId}`);
+      return;
+    }
+
     streams.delete(sessionId);
     options.registry.setStreaming(sessionId, false);
     try {
@@ -118,11 +144,23 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
     } catch {
       // already closed
     }
-    // Section 16: losing the page is a disconnect, and it must be reported rather than
-    // leaving the operator looking at stale metrics.
+
+    /*
+     * Recorded, but NOT reported as a peer-state change.
+     *
+     * The signalling stream and the media stream are independent by design: video travels phone →
+     * Wi-Fi → desktop and keeps flowing perfectly well while this HTTP connection is re-established.
+     * `EventSource` drops and reopens on its own after any blip, so treating a lost stream as a lost
+     * camera pushed a healthy live feed into `reconnecting` and cleared its metrics — and nothing
+     * ever moved it back, because the desktop peer had never changed state and so emitted no
+     * recovery event.
+     *
+     * The authoritative signals that a camera is gone are the desktop's own RTCPeerConnection
+     * state and an explicit `bye`. Both still work when the phone genuinely disappears, because its
+     * media transport dies with it.
+     */
     options.registry.recordState(sessionId, 'disconnected');
-    options.onPhoneState?.(sessionId, 'disconnected');
-    log(`[wireless-camera] stream detached for ${sessionId}`);
+    log(`[wireless-camera] signalling stream detached for ${sessionId} (media path unaffected)`);
   };
 
   const handler = (request: HttpRequest, response: HttpResponse): void => {
@@ -255,8 +293,15 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
       const write = (chunk: string): boolean => response.write(chunk);
       const end = (): void => void response.end();
 
-      // Replace any previous stream for this session: a phone that reloads the page opens a
-      // second one, and leaving the first attached would split messages between them.
+      /*
+       * Replace any previous stream for this session: a phone that reloads the page — or whose
+       * EventSource reconnected after a blip — opens a second one, and leaving the first attached
+       * would split messages between them.
+       *
+       * Deliberately NOT routed through `detach`. A replacement is not a disconnect: the phone is
+       * present, its peer connection is untouched, and reporting `disconnected` here would knock a
+       * working camera into `reconnecting`.
+       */
       const previous = streams.get(sessionId);
       if (previous) {
         streams.delete(sessionId);
@@ -265,15 +310,19 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
         } catch {
           /* already gone */
         }
+        log(`[wireless-camera] replaced stream ${previous.id} for ${sessionId}`);
       }
 
-      streams.set(sessionId, { sessionId, write, end });
+      const attached: Attached = { sessionId, id: ++streamSequence, write, end };
+      streams.set(sessionId, attached);
       options.registry.setStreaming(sessionId, true);
       write(': connected\n\n');
       flush(sessionId);
-      log(`[wireless-camera] stream attached for ${sessionId}`);
+      log(`[wireless-camera] stream attached for ${sessionId} (stream ${attached.id})`);
 
-      request.on('close', () => detach(sessionId));
+      // Closes over THIS stream, not the session id, so a late close for a superseded stream
+      // cannot take the live one down with it.
+      request.on('close', () => detach(attached));
       return;
     }
 
@@ -348,11 +397,11 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
           // SSE keep-alive. Also detects a phone that vanished without closing the socket,
           // which is the normal outcome of walking out of Wi-Fi range.
           heartbeat = setInterval(() => {
-            for (const sessionId of [...streams.keys()]) {
+            for (const attached of [...streams.values()]) {
               try {
-                streams.get(sessionId)?.write(': ping\n\n');
+                attached.write(': ping\n\n');
               } catch {
-                detach(sessionId);
+                detach(attached);
               }
             }
             options.registry.prune();
@@ -373,10 +422,10 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
           heartbeat = null;
         }
         // Section 20 and test 12: closing the app terminates every camera session.
-        for (const sessionId of [...streams.keys()]) {
-          options.registry.enqueue(sessionId, { kind: 'bye', reason: 'Exceptionel Presenter closed' });
-          flush(sessionId);
-          detach(sessionId);
+        for (const attached of [...streams.values()]) {
+          options.registry.enqueue(attached.sessionId, { kind: 'bye', reason: 'Exceptionel Presenter closed' });
+          flush(attached.sessionId);
+          detach(attached);
         }
         options.registry.revokeAll('Exceptionel Presenter closed');
 
