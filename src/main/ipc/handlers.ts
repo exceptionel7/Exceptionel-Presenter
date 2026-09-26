@@ -31,6 +31,8 @@ export interface HandlerContext {
   wireless?: WirelessCameraService;
   /** Relays loopback signalling between the output and operator renderers. */
   relay?: (to: 'operator' | 'output', message: unknown) => void;
+  /** Ensures the output renderer that owns phone peer connections exists. */
+  ensureMediaHost?: () => void;
   /** The unified camera source list, owned by the camera source registry. */
   cameraSources?: () => CameraSource[];
   assignCameraSource?: (id: string, assignment: string) => CameraSource[];
@@ -184,7 +186,19 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
 
     // ── wireless camera ──────────────────────────────────────────────────────────
     'wireless:status': () => requireWireless(context).status(),
-    'wireless:start': () => requireWireless(context).start(),
+
+    'wireless:start': () => {
+      /*
+       * Opens the media host up front rather than on the first phone signal.
+       *
+       * The output window owns the RTCPeerConnection, and its renderer needs a few hundred
+       * milliseconds to load. Opening it only when a phone's `ready` arrives meant racing that
+       * load against a one-shot message. Buffering in WindowManager covers the race, but warming
+       * the window here means there is usually nothing to buffer.
+       */
+      context.ensureMediaHost?.();
+      return requireWireless(context).start();
+    },
     'wireless:stop': () => requireWireless(context).stop(),
 
     'wireless:createSession': (payload) => {
@@ -233,6 +247,7 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       }
 
       // Offers and ICE candidates are genuinely for the phone.
+      console.log(`[wireless-camera] desktop→phone ${parsed.value.kind} (${sessionId})`);
       wireless.sendToPhone(sessionId, parsed.value);
     },
 

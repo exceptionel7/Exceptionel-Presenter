@@ -79,7 +79,13 @@ export function useWirelessCameraHost(): WirelessCameraHost {
   );
 
   useIpcEvent('wireless:signal', ({ sessionId, message }) => {
-    void receiver.handle(sessionId, message as SignalMessage);
+    const kind = (message as { kind?: string } | null)?.kind ?? 'unknown';
+    // Forwarded to the terminal by the main process, so the whole handshake is traceable.
+    console.log(`[output] handling ${kind} for ${sessionId}`);
+    void receiver.handle(sessionId, message as SignalMessage).catch((error: unknown) => {
+      // A rejected promise here would otherwise be invisible and the handshake would just stall.
+      console.error(`[output] failed to handle ${kind}:`, error);
+    });
   });
 
   useIpcEvent('media:relay', ({ message }) => publisher.handleRelay(message));

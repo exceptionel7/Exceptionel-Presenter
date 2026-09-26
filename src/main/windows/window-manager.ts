@@ -21,6 +21,7 @@ import {
 } from '../security/policy.ts';
 import { roleArgument } from '../../shared/preload-role.ts';
 import { readConsoleMessage } from './console-message.ts';
+import { createSendBuffer } from './send-buffer.ts';
 import type { WindowRole } from '../ipc/dispatcher.ts';
 
 /** Vite dev server URL, injected by electron-vite. Absent in packaged builds. */
@@ -67,6 +68,35 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
   let confidence: BrowserWindow | null = null;
 
   const roles = new WeakMap<WebContents, WindowRole>();
+
+  /*
+   * MESSAGES SENT BEFORE A RENDERER IS LISTENING ARE DROPPED SILENTLY.
+   *
+   * `webContents.send` to a window whose page has not finished loading goes nowhere — no error, no
+   * queue. That cost a working feature: opening the hidden media host and immediately forwarding a
+   * phone's one-shot `ready` message meant it vanished, no WebRTC offer was created, and the phone
+   * sat at "CAMERA READY" with Connection "—" forever.
+   *
+   * The buffering rules live in send-buffer.ts so they can be tested without Electron.
+   */
+  const sendBuffer = createSendBuffer<WindowRole>({
+    onDrop: (role, message) =>
+      console.warn(`[window:${role}] buffer full, dropped a queued "${message.channel}"`),
+  });
+
+  const flushPending = (role: WindowRole): void => {
+    const queued = sendBuffer.markReady(role);
+    if (queued.length === 0) return;
+
+    const window = windowFor(role);
+    if (!window || window.isDestroyed()) return;
+
+    console.log(`[window:${role}] flushing ${queued.length} buffered message(s)`);
+    for (const message of queued) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+      window.webContents.send(message.channel, message.payload);
+    }
+  };
 
   installSessionGuards();
 
@@ -155,6 +185,16 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
     window.webContents.on('unresponsive', () => {
       console.error(`[renderer:${role}] became unresponsive`);
     });
+
+    // Fires again after a dev-server reload, which is exactly when the queue must be replayed.
+    window.webContents.on('did-finish-load', () => {
+      console.log(`[window:${role}] renderer ready`);
+      flushPending(role);
+    });
+
+    // A closed window must not be remembered as ready, or the next one opened under the same role
+    // would have its first messages sent before it is listening.
+    window.on('closed', () => sendBuffer.forget(role));
 
     // Refuse navigation away from our own origin. A link in a song's notes, an injected
     // iframe, or a compromised dependency calling location.assign all land here.
@@ -359,11 +399,14 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
 
     sendTo(role, channel, payload) {
       const window = windowFor(role);
-      // The isDestroyed guard is essential, not defensive noise: LiveStateService
-      // broadcasts over a copy of its listener set, so a window closing mid-broadcast
-      // can still be handed one final event after it unsubscribed. Sending to destroyed
-      // webContents throws.
+      // The isDestroyed guard is essential, not defensive noise: LiveStateService broadcasts over
+      // a copy of its listener set, so a window closing mid-broadcast can still be handed one
+      // final event after it unsubscribed. Sending to destroyed webContents throws.
       if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
+
+      // Buffer until the renderer is listening, or the message is lost with no trace.
+      if (sendBuffer.enqueue(role, { channel, payload })) return;
+
       window.webContents.send(channel, payload);
     },
 

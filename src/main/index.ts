@@ -211,6 +211,7 @@ async function bootstrap(): Promise<void> {
     onSignalToDesktop: (sessionId, message) => {
       // The output window is the canonical receiver, so phone signalling goes there.
       windows.ensureMediaHost();
+      console.log(`[wireless-camera] phone→desktop ${message.kind} (${sessionId})`);
       windows.sendTo('output', 'wireless:signal', { sessionId, message });
     },
     onLog: (line) => console.log(line),
@@ -223,6 +224,9 @@ async function bootstrap(): Promise<void> {
       appInfo,
       quit: () => app.quit(),
       wireless,
+      ensureMediaHost: () => {
+        windows.ensureMediaHost();
+      },
       // Loopback SDP and ICE between our own two renderers. No media crosses main.
       relay: (to, message) => {
         if (to === 'output') windows.ensureMediaHost();
