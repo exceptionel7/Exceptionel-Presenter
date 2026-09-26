@@ -17,7 +17,8 @@ import type { ShortcutBinding, SongQuery } from '../../shared/domain/entities.ts
 import type { Cue, LiveIntent } from '../../shared/domain/live-state.ts';
 import type { AppDatabase } from '../db/database.ts';
 import type { HandlerRegistry } from './dispatcher.ts';
-import { cuesFromServiceItems, type LiveStateService } from '../services/live-state-service.ts';
+import type { LiveStateService } from '../services/live-state-service.ts';
+import { openService } from '../services/service-opener.ts';
 import type { WirelessCameraService } from '../services/wireless-camera-service.ts';
 import type { CameraSource } from '../../shared/domain/camera.ts';
 import { parseSignalMessage } from '../../shared/domain/signaling.ts';
@@ -122,16 +123,33 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
     'live:intent': (payload) => live.apply(payload as LiveIntent),
     'live:setCues': (payload) => live.setCues((payload as { cues: Cue[] }).cues),
 
+    /**
+     * Opens a service for presentation: loads it, expands it into cues, installs them.
+     *
+     * Deliberately one channel rather than "read the service, build cues in the renderer, send them
+     * back". The operator window would then be the author of live state, which it is not, and any
+     * bug in its expansion would put a cue list on the projector that disagreed with the database.
+     */
+    'services:open': (payload) => openService(db, live, (payload as { serviceId: string }).serviceId),
+
     // ── crash recovery (Section 33) ──────────────────────────────────────────────
     'recovery:check': () => db.recovery.findRecoverable(),
     'recovery:restore': (payload) => {
       const snapshot = db.recovery.findRecoverable();
       const { id } = payload as { id: string };
       if (!snapshot || snapshot.id !== id) return null;
-      const service = snapshot.serviceId ? db.services.get(snapshot.serviceId) : null;
-      if (service) live.setCues(cuesFromServiceItems(service.items));
+
+      /*
+       * The SAME expansion the operator's Open uses.
+       *
+       * Previously this called `cuesFromServiceItems`, which produced one cue per item — so a
+       * recovered service presented a single slide per song instead of one per section. The one
+       * moment recovery matters is mid-service, which is the worst possible time to discover that
+       * the recovered cue list is not the one you had.
+       */
+      const opened = snapshot.serviceId ? openService(db, live, snapshot.serviceId) : null;
       db.recovery.discard(id);
-      return service;
+      return opened?.service ?? null;
     },
     'recovery:discard': (payload) => {
       db.recovery.discard((payload as { id: string }).id);

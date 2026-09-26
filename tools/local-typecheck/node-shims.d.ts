@@ -17,12 +17,21 @@ declare module 'node:test' {
 }
 declare module 'node:assert/strict' {
   interface Assert {
-    (value: unknown, message?: string): void;
+    /*
+     * `asserts value`, exactly as @types/node declares it.
+     *
+     * Without the assertion signature, `assert.ok(x)` does not narrow, so every
+     * `assert.ok(maybeNull); use(maybeNull.field)` in the suite raised TS18047 here while compiling
+     * perfectly well on a machine with real types. That is worse than a missing check: it pushes
+     * people to restructure working tests to satisfy a shim, and it trains them to read this gate's
+     * output as noise. A shim that disagrees with the types it stands in for is a liability.
+     */
+    (value: unknown, message?: string): asserts value;
     equal(actual: unknown, expected: unknown, message?: string): void;
     notEqual(actual: unknown, expected: unknown, message?: string): void;
     deepEqual(actual: unknown, expected: unknown, message?: string): void;
     notDeepEqual(actual: unknown, expected: unknown, message?: string): void;
-    ok(value: unknown, message?: string): void;
+    ok(value: unknown, message?: string): asserts value;
     match(value: string, regExp: RegExp, message?: string): void;
     doesNotMatch(value: string, regExp: RegExp, message?: string): void;
     throws(

@@ -28,6 +28,7 @@ import type {
   Theme,
 } from './domain/entities.ts';
 import type { Cue, LiveIntent, LiveState } from './domain/live-state.ts';
+import type { SkippedItem } from './domain/cues.ts';
 import type { ErrorNotice } from './domain/errors.ts';
 import type { CameraSource } from './domain/camera.ts';
 
@@ -111,6 +112,14 @@ export interface IpcRequestMap {
   'live:getState': { req: void; res: LiveState };
   'live:intent': { req: LiveIntent; res: LiveState };
   'live:setCues': { req: { cues: Cue[] }; res: LiveState };
+  /**
+   * Opens a service for presentation: main loads it, expands it into cues and installs them.
+   *
+   * Returns null when the service is missing or deleted. `skipped` names every item that will
+   * present nothing and why — the operator must learn that on Thursday, not by pressing Next on
+   * Sunday and watching the screen stay black.
+   */
+  'services:open': { req: { serviceId: string }; res: OpenedService | null };
 
   // crash recovery (Section 33)
   'recovery:check': { req: void; res: RecoverySnapshot | null };
@@ -243,6 +252,7 @@ export const IPC_CHANNELS = Object.freeze([
   'live:getState',
   'live:intent',
   'live:setCues',
+  'services:open',
   'recovery:check',
   'recovery:restore',
   'recovery:discard',
@@ -384,6 +394,19 @@ export interface ServiceDraft {
   themeId?: string | null;
   notes?: string | null;
   items: ServiceItemDraft[];
+}
+
+/**
+ * The result of opening a service for presentation.
+ *
+ * `cues` is returned as well as broadcast on `live:cues` so the operator can render the running
+ * order from the same expansion the engine will step through — not a second one of its own.
+ */
+export interface OpenedService {
+  service: Service;
+  cues: Cue[];
+  /** Items that will present nothing, each with a reason the operator can act on. */
+  skipped: SkippedItem[];
 }
 
 export interface ThemeDraft {

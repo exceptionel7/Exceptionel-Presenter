@@ -104,47 +104,13 @@ export function createLiveStateService(options: { initialThemeId?: string } = {}
   };
 }
 
-/**
- * Flattens a service's items into the cue list the live engine steps through.
+/*
+ * `cuesFromServiceItems` lived here through Phase 2 and produced one cue per service item.
  *
- * Phase 2 produces one cue per item. Phase 3 expands songs into per-section lyric slides
- * and Phase 4 expands scripture into per-verse cues; the shape of the output does not
- * change, so the live engine needs no rework when that lands.
+ * Phase 3 replaced it with `buildCues` in shared/domain/cues.ts, which expands a song into one cue
+ * per lyric slide and reports the items it cannot present. It moved to `shared` because it is pure
+ * and because the operator interface needs the same `skipped` list the engine derives — and it grew
+ * a `songs` parameter, which this module has no business fetching.
+ *
+ * See src/main/services/service-opener.ts for the single path from a stored service to a cue list.
  */
-export function cuesFromServiceItems(
-  items: readonly { id: string; kind: string; label: string; config?: Record<string, unknown> }[],
-): Cue[] {
-  const cues: Cue[] = [];
-  for (const item of items) {
-    // A header is a visual divider in the operator's running order, not something the
-    // audience ever sees, so it produces no cue.
-    if (item.kind === 'header') continue;
-    cues.push({
-      id: `cue_${item.id}`,
-      kind: mapKindToCueKind(item.kind),
-      itemId: item.id,
-      label: item.label,
-      ...(typeof item.config?.['notes'] === 'string' ? { notes: item.config['notes'] } : {}),
-    });
-  }
-  return cues;
-}
-
-function mapKindToCueKind(kind: string): Cue['kind'] {
-  switch (kind) {
-    case 'song':
-      return 'lyric';
-    case 'scripture':
-      return 'scripture';
-    case 'image':
-      return 'image';
-    case 'video':
-      return 'video';
-    case 'camera_scene':
-      return 'camera';
-    case 'announcement':
-      return 'announcement';
-    default:
-      return 'slide';
-  }
-}

@@ -55,16 +55,41 @@ export function ConfidenceApp(): JSX.Element {
         </div>
       </header>
 
-      {/* ── current slide, large ────────────────────────────────────────────────── */}
-      <main className="flex-1 min-h-0 flex flex-col justify-center rounded-lg border border-ink-700 bg-black px-10 py-8">
+      {/*
+        ── current slide, large ──────────────────────────────────────────────────
+        THE WORDS, not the label. This screen exists so the person on stage can sing or read what
+        the congregation is seeing; "Way Maker — Chorus" is no use to them. The label is kept as a
+        small caption above, because knowing you are in the chorus is still useful.
+
+        Note this is NOT SlideCanvas: a confidence monitor is a legibility surface, not a preview.
+        It deliberately ignores the theme — dark text on a pale background would be unreadable from
+        three metres, and a 55pt lyric letterboxed into a 16:9 box wastes most of the screen.
+      */}
+      <main className="flex-1 min-h-0 flex flex-col justify-center rounded-lg border border-ink-700 bg-black px-10 py-8 overflow-hidden">
         {blacked ? (
           <p className="text-center text-xl text-silver-700 uppercase tracking-[0.2em]">
             Audience screen is black
           </p>
         ) : progress?.current ? (
-          <p className="text-center text-5xl font-semibold leading-tight text-white">
-            {progress.current.label}
-          </p>
+          <>
+            <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-silver-600 mb-4">
+              {progress.current.label}
+            </p>
+            {progress.current.lines.length > 0 ? (
+              <div className="text-center text-white font-semibold leading-tight text-4xl xl:text-5xl space-y-1">
+                {progress.current.lines.map((line, index) => (
+                  // Lyrics repeat lines within a slide, so the index is part of the identity.
+                  <p key={`${String(index)}:${line}`}>{line === '' ? '\u00A0' : line}</p>
+                ))}
+              </div>
+            ) : (
+              // A camera scene has no words. Saying so beats an empty black rectangle that looks
+              // like a fault.
+              <p className="text-center text-lg text-silver-600 uppercase tracking-[0.18em]">
+                No text on this slide
+              </p>
+            )}
+          </>
         ) : (
           <p className="text-center text-xl text-silver-700 uppercase tracking-[0.2em]">Nothing live</p>
         )}
@@ -74,9 +99,17 @@ export function ConfidenceApp(): JSX.Element {
       <footer className="shrink-0 grid grid-cols-2 gap-5">
         <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 min-h-[96px]">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-silver-700 mb-2">Next</p>
-          <p className="text-lg text-silver-300 leading-snug">
-            {progress?.next?.label ?? <span className="text-silver-700">End of service</span>}
-          </p>
+          {progress?.next ? (
+            <>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-silver-600">{progress.next.label}</p>
+              {/* The opening words of what is coming, so a leader can breathe in the right place. */}
+              <p className="mt-1 text-lg text-silver-300 leading-snug line-clamp-2">
+                {progress.next.lines.slice(0, 2).join(' / ')}
+              </p>
+            </>
+          ) : (
+            <p className="text-lg text-silver-700">End of service</p>
+          )}
         </section>
 
         <section className="rounded-lg border border-ink-700 bg-ink-900 p-4 min-h-[96px]">

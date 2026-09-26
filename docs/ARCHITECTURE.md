@@ -292,6 +292,55 @@ z0  BASE         solid colour | gradient | black
   so resuming returns to the exact prior slide. `clear` hides only the TEXT layer,
   leaving camera/background live — that distinction is what operators actually need.
 
+### One renderer, five surfaces
+
+`src/renderer/shared-ui/SlideCanvas.tsx` paints every slide in the application: the audience
+output, the operator's PREVIEW pane, the operator's LIVE pane and the theme gallery. Not four
+implementations that resemble each other — that component, four times, with different props.
+
+A preview exists so the operator can trust it. A second implementation of "how a theme renders"
+would eventually disagree with the first, and the operator would discover the disagreement on the
+projector, in front of a congregation, with no way to tell which one had been lying.
+
+The confidence monitor is the deliberate exception: it is a legibility surface, not a preview, so it
+ignores the theme entirely. Dark text on a pale background is unreadable from three metres, and
+letterboxing a 55pt lyric into 16:9 wastes most of a stage screen.
+
+Geometry is **container-relative, not measured**. The canvas is letterboxed with `aspect-ratio` and
+sized in `cqh` units, where `1cqh` is 1% of the canvas height — so a theme's 84pt type is
+`(84/1080)*100cqh` and lands proportionally identically in a 240px preview thumbnail and on a 4K
+wall. No resize listeners, no `transform: scale()`, no measurement pass.
+
+`annotate` is an operator-only prop that draws honest diagnostics: "no camera signal", "image
+backgrounds arrive in Phase 5", "too much text to fit". The audience output never sets it. A caption
+on a projector explaining the state of our backlog is worse than showing nothing.
+
+### Why a cue carries its own text
+
+`Cue.lines` holds the words, and the audience output never reads the library to get them.
+`OUTPUT_ALLOWED_CHANNELS` grants that window `themes:list` and nothing else from the library — no
+songs, no services. Phase 3 could have been built by relaxing that, which would have been less code
+and a worse design.
+
+So one broadcast carries one complete truth, and the output can never be asked to paint a slide
+whose words it does not have. Only the *styling* is looked up, resolved locally from a single
+`themes:list` on mount, which also means advancing a slide costs no IPC round trip.
+
+### Text must fit, and fitting is pure
+
+`fitSlideText` chooses a font size at which a slide is predicted to fit the theme's safe area. An
+eight-line chorus at 84pt overflows a 1080-high canvas, and a long line wraps and overflows sooner —
+text running off the bottom of a projector is the most visible failure this application has.
+
+The vertical arithmetic is exact: available height, line count, line height and font size are all
+known. Only the **wrapped** line count is estimated, from a documented average glyph advance, because
+real per-glyph measurement needs a DOM and a loaded font. Keeping the decision pure buys two things:
+it is unit-testable, and it is deterministic — so the preview and the audience screen compute the
+same size from the same cue rather than two windows disagreeing about type size.
+
+When even the smallest permitted size will not fit, that is reported rather than shrunk away. The
+operator is told to split the slide; the audience sees the smallest readable type.
+
 ---
 
 ## 6. Display management
@@ -435,7 +484,7 @@ optimism.
 |---|---|---|
 | 1 | Architecture (this doc) + skeleton | ✅ done |
 | 2 | Electron shell, React nav, DB + migrations, settings, dashboard | migrations/repos **VERIFIED HERE** via `node:test`; shell **needs local run** |
-| 3 | Presentation engine: slides, preview, live, black/clear, next/prev | reducer **VERIFIED HERE**; windows **needs local run** |
+| 3 | Presentation engine: slides, preview, live, black/clear, next/prev | cue expansion, theme resolution, text fitting **VERIFIED HERE**; rendering **needs local run** |
 | 4 | Songs + Bible: library, section→slide, reference parser, FTS search | **VERIFIED HERE** (pure logic + SQLite) |
 | 5 | Media library: import, thumbnails, streaming playback | repo **VERIFIED HERE**; playback **needs local run** |
 | 6 | Camera: detect, preview, switch, + lyrics, + Scripture | provider registry **VERIFIED HERE**; capture **needs local run** |

@@ -3,6 +3,7 @@
  */
 
 import type { Theme, ThemeSpec } from '../../../shared/domain/entities.ts';
+import { BASE_THEME_SPEC, mergeSpec, resolveThemeSpec } from '../../../shared/domain/theme.ts';
 import type { ThemeDraft } from '../../../shared/ipc-contract.ts';
 import type { SqliteDriver } from '../driver.ts';
 import type { IdentityRepository } from './identity.ts';
@@ -17,27 +18,16 @@ export interface ThemeRepository {
   resolve(id: string): ThemeSpec | null;
 }
 
-/**
- * The fallback every theme resolves against, so the presentation renderer always receives
- * a complete spec and never has to guard a missing field mid-service.
+/*
+ * BASE_THEME_SPEC and mergeSpec now live in shared/domain/theme.ts and are re-exported here so
+ * existing importers keep working.
+ *
+ * They moved because a renderer cannot import from main, so `Themes.tsx` had been keeping its own
+ * copy. Two definitions of what a theme defaults to is a guarantee that the operator's preview and
+ * the audience screen eventually disagree — and the operator would have no way to tell which was
+ * lying. One definition, used by both.
  */
-export const BASE_THEME_SPEC: ThemeSpec = {
-  background: { kind: 'solid', value: '#000000' },
-  text: {
-    fontFamily: 'Inter',
-    fontSize: 72,
-    fontWeight: 600,
-    color: '#FFFFFF',
-    align: 'center',
-    lineHeight: 1.3,
-    letterSpacing: 0,
-    shadow: { enabled: true, color: 'rgba(0,0,0,0.7)', blur: 24, offsetY: 4 },
-    outline: { enabled: false, color: '#000000', width: 0 },
-  },
-  padding: { top: 0.1, right: 0.08, bottom: 0.1, left: 0.08 },
-  textBox: { enabled: false, color: '#000000', opacity: 0, cornerRadius: 0 },
-  transition: { kind: 'fade', durationMs: 250 },
-};
+export { BASE_THEME_SPEC, mergeSpec };
 
 export function createThemeRepository(db: SqliteDriver, identity: IdentityRepository): ThemeRepository {
   const toTheme = (row: Record<string, unknown>): Theme => ({
@@ -57,17 +47,26 @@ export function createThemeRepository(db: SqliteDriver, identity: IdentityReposi
     return row ? toTheme(row) : null;
   };
 
+  /*
+   * A plain local function, deliberately not a method on the returned object.
+   *
+   * `resolve` needs the full list, and reaching it as `this.list()` would silently lose its binding
+   * the moment anything destructured the repository — `const { resolve } = themes` is an entirely
+   * reasonable thing to write, and it would throw at the worst possible moment. This project has
+   * already lost a launch cycle to exactly that mistake elsewhere.
+   */
+  const list = (): Theme[] =>
+    db
+      .prepare(
+        `SELECT id, name, parent_theme_id, is_builtin, spec_json FROM themes
+         WHERE deleted_at IS NULL
+         ORDER BY is_builtin DESC, name COLLATE NOCASE`,
+      )
+      .all()
+      .map(toTheme);
+
   return {
-    list() {
-      return db
-        .prepare(
-          `SELECT id, name, parent_theme_id, is_builtin, spec_json FROM themes
-           WHERE deleted_at IS NULL
-           ORDER BY is_builtin DESC, name COLLATE NOCASE`,
-        )
-        .all()
-        .map(toTheme);
-    },
+    list,
 
     get,
 
@@ -174,46 +173,14 @@ export function createThemeRepository(db: SqliteDriver, identity: IdentityReposi
       });
     },
 
-    resolve(id) {
-      const chain: Theme[] = [];
-      const seen = new Set<string>();
-      let cursor = get(id);
-      if (!cursor) return null;
-
-      while (cursor) {
-        // Defensive: save() prevents cycles, but a hand-edited database should degrade
-        // rather than hang the main process.
-        if (seen.has(cursor.id)) break;
-        seen.add(cursor.id);
-        chain.push(cursor);
-        cursor = cursor.parentThemeId ? get(cursor.parentThemeId) : null;
-      }
-
-      // Apply from the most distant ancestor down to the requested theme, so nearer
-      // definitions win.
-      return chain
-        .reverse()
-        .reduce<ThemeSpec>((spec, theme) => mergeSpec(spec, theme.spec), BASE_THEME_SPEC);
-    },
-  };
-}
-
-/**
- * Field-level merge, one level into each group. Themes override individual properties
- * (say, just `text.color`) without having to restate the whole group — a blind spread
- * would wipe the sibling fields.
- */
-export function mergeSpec(base: ThemeSpec, override: Partial<ThemeSpec>): ThemeSpec {
-  return {
-    background: { ...base.background, ...(override.background ?? {}) },
-    text: {
-      ...base.text,
-      ...(override.text ?? {}),
-      shadow: { ...base.text.shadow, ...(override.text?.shadow ?? {}) },
-      outline: { ...base.text.outline, ...(override.text?.outline ?? {}) },
-    },
-    padding: { ...base.padding, ...(override.padding ?? {}) },
-    textBox: { ...base.textBox, ...(override.textBox ?? {}) },
-    transition: { ...base.transition, ...(override.transition ?? {}) },
+    /*
+     * Delegates to the shared resolver rather than walking the chain itself.
+     *
+     * `list()` already returns every live theme, and resolution is a pure function of that list, so
+     * the renderers and the main process run literally the same code. The previous implementation
+     * issued one SELECT per ancestor, which also meant the operator preview (resolving client-side
+     * from `themes:list`) and the audience output could diverge if the two walks ever drifted.
+     */
+    resolve: (id) => resolveThemeSpec(list(), id),
   };
 }

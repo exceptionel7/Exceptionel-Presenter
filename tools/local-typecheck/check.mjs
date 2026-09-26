@@ -55,7 +55,21 @@ const FATAL_WITHOUT_RESOLUTION = new Map([
   ['TS7027', 'Unreachable code.'],
   ['TS2540', 'Assignment to a read-only property.'],
   ['TS18004', 'No value exists in scope for a shorthand property.'],
+  [
+    'TS2503',
+    "Cannot find namespace — e.g. `React.ReactNode` without importing React, which throws at runtime.",
+  ],
 ]);
+
+/**
+ * Messages that are genuinely unresolvable in this pass and must not be treated as faults.
+ *
+ * Deliberately matched on the exact MESSAGE, not the code. `JSX` is the only namespace the renderer
+ * legitimately cannot resolve without React's types, so suppressing the whole of TS2503 would also
+ * have hidden `React.ReactNode` used without importing React — which is a real runtime error and did
+ * in fact slip through once.
+ */
+const SUPPRESSED = [/Cannot find namespace 'JSX'\./];
 
 const tsc = (files, extraFlags = []) => {
   try {
@@ -107,6 +121,8 @@ const problems = [];
 for (const line of rendererOutput.split('\n')) {
   const match = /error (TS\d+):/.exec(line);
   if (!match) continue;
+
+  if (SUPPRESSED.some((pattern) => pattern.test(line))) continue;
 
   const code = match[1];
   const number = Number(code.slice(2));

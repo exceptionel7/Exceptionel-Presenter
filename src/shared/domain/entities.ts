@@ -156,6 +156,17 @@ export interface ThemeSpec {
     letterSpacing: number;
     shadow: { enabled: boolean; color: string; blur: number; offsetY: number };
     outline: { enabled: boolean; color: string; width: number };
+    /**
+     * Shrinks a slide that would not otherwise fit.
+     *
+     * Required, not a nicety: an eight-line chorus at 84pt overflows a 1080-high canvas, and a
+     * long line wraps and overflows sooner still. Without this the audience sees text running off
+     * the bottom of the projector, which is the most visible failure this application can have.
+     *
+     * `minScale` is a FRACTION of `fontSize` rather than an absolute size, so it inherits sensibly
+     * between themes whose base sizes differ.
+     */
+    autoFit: { enabled: boolean; minScale: number };
   };
   /** Safe-area insets as a fraction of the canvas — keeps text off projector edges. */
   padding: { top: number; right: number; bottom: number; left: number };

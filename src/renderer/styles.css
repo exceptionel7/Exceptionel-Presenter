@@ -114,3 +114,45 @@
     @apply font-mono tabular-nums;
   }
 }
+
+
+/*
+ * Slide transitions (Section 21, docs/ARCHITECTURE.md §5).
+ *
+ * Applied to the TEXT LAYER ONLY, never to the whole slide. A lyric change must not restart a
+ * background video or make a live camera feed flicker — the audience would see the room jump every
+ * time the operator advanced a line.
+ *
+ * Durations come from the theme, passed as an inline `animation-duration`, so a theme that asks for
+ * 320 ms gets 320 ms rather than whatever is written here.
+ */
+@keyframes ep-slide-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ep-slide-in {
+  from {
+    opacity: 0;
+    /* Canvas-relative, so the movement is proportional on a 720p projector and a 4K wall. */
+    transform: translateY(3cqh);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Respects the operating system's reduced-motion preference. A volunteer operator who has turned
+ * animation off system-wide has asked for it everywhere, including here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ep-slide-animate {
+    animation: none !important;
+  }
+}

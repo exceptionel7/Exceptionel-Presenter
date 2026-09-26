@@ -129,6 +129,14 @@ const vCue = vObject({
   kind: vEnum(['lyric', 'scripture', 'slide', 'image', 'video', 'camera', 'announcement'] as const),
   itemId: vId(),
   label: vString({ min: 1, max: 300 }),
+  /*
+   * Bounded twice over, because this is the one payload that grows with the size of a church's
+   * library. 200 lines is far beyond any real slide (a whole hymn verse is six), and 2,000
+   * characters per line is far beyond any real lyric — together with the 20,000-cue cap on
+   * `live:setCues` they put a hard ceiling on a single message.
+   */
+  lines: vArray(vString({ max: 2_000 }), { max: 200 }),
+  themeId: vNullable(vId()),
   notes: vOptional(vString({ max: 10_000 })),
 });
 
@@ -264,6 +272,7 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
   'live:getState': vVoid(),
   'live:intent': vLiveIntent,
   'live:setCues': vObject({ cues: vArray(vCue, { max: 20_000 }) }),
+  'services:open': vObject({ serviceId: vId() }),
 
   'recovery:check': vVoid(),
   'recovery:restore': vObject({ id: vId() }),

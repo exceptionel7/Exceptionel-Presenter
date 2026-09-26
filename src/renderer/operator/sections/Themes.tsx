@@ -5,28 +5,11 @@
  * here is genuinely what the audience screen will produce, not an illustration.
  */
 
-import type { Theme, ThemeSpec } from '@shared/domain/entities.ts';
+import type { Theme } from '@shared/domain/entities.ts';
+import { BASE_THEME_SPEC, describeBackground, mergeSpec } from '@shared/domain/theme.ts';
 import { useQuery } from '@ui/hooks.ts';
 import { EmptyState, FailureNotice, Panel, Spinner } from '@ui/primitives.tsx';
-
-/** Same defaults as BASE_THEME_SPEC in the main process, for fields a theme omits. */
-const FALLBACK: ThemeSpec = {
-  background: { kind: 'solid', value: '#000000' },
-  text: {
-    fontFamily: 'Inter',
-    fontSize: 72,
-    fontWeight: 600,
-    color: '#FFFFFF',
-    align: 'center',
-    lineHeight: 1.3,
-    letterSpacing: 0,
-    shadow: { enabled: true, color: 'rgba(0,0,0,0.7)', blur: 24, offsetY: 4 },
-    outline: { enabled: false, color: '#000000', width: 0 },
-  },
-  padding: { top: 0.1, right: 0.08, bottom: 0.1, left: 0.08 },
-  textBox: { enabled: false, color: '#000000', opacity: 0, cornerRadius: 0 },
-  transition: { kind: 'fade', durationMs: 250 },
-};
+import { SlideCanvas } from '@ui/SlideCanvas.tsx';
 
 const SAMPLE: Record<string, string[]> = {
   'theme-scripture': ['For God so loved the world,', 'that he gave his only Son…'],
@@ -71,7 +54,7 @@ export function ThemesSection(): JSX.Element {
 }
 
 function ThemeCard({ theme }: { theme: Theme }): JSX.Element {
-  const spec = mergePreview(FALLBACK, theme.spec);
+  const spec = mergeSpec(BASE_THEME_SPEC, theme.spec);
   const lines = SAMPLE[theme.id] ?? SAMPLE['default']!;
 
   return (
@@ -86,7 +69,12 @@ function ThemeCard({ theme }: { theme: Theme }): JSX.Element {
       }
     >
       <div className="p-3">
-        <ThemePreview spec={spec} lines={lines} />
+        {/*
+          The SAME component the audience output uses. A separate preview implementation would
+          eventually disagree with the real renderer, and the operator would find out on the
+          projector.
+        */}
+        <SlideCanvas spec={spec} lines={lines} annotate className="w-full aspect-video rounded border border-ink-700" />
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
           <Row label="Background" value={describeBackground(spec)} />
           <Row label="Font size" value={`${spec.text.fontSize}pt`} />
@@ -109,83 +97,6 @@ function ThemeCard({ theme }: { theme: Theme }): JSX.Element {
   );
 }
 
-/**
- * Renders the theme on a 16:9 surface. Font size is expressed as a percentage of the
- * preview height rather than in px, so the preview scales proportionally exactly as the
- * real output does on a different-resolution display.
- */
-function ThemePreview({ spec, lines }: { spec: ThemeSpec; lines: string[] }): JSX.Element {
-  const CANVAS_HEIGHT = 1080;
-
-  const justify =
-    spec.text.align === 'left' ? 'flex-start' : spec.text.align === 'right' ? 'flex-end' : 'center';
-
-  const textShadow = spec.text.shadow.enabled
-    ? `0 ${(spec.text.shadow.offsetY / CANVAS_HEIGHT) * 100}cqh ${(spec.text.shadow.blur / CANVAS_HEIGHT) * 100}cqh ${spec.text.shadow.color}`
-    : undefined;
-
-  return (
-    <div
-      className="relative w-full aspect-video rounded overflow-hidden border border-ink-700"
-      style={{ containerType: 'size', background: backgroundCss(spec) }}
-    >
-      {/* Camera-backed themes have no image here; a hatch makes that explicit rather than
-          showing a misleading solid colour. */}
-      {spec.background.kind === 'camera' && (
-        <div className="absolute inset-0 grid place-items-center bg-[repeating-linear-gradient(45deg,#0d1a28_0px,#0d1a28_8px,#0a1421_8px,#0a1421_16px)]">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-silver-700">Live camera feed</span>
-        </div>
-      )}
-
-      <div
-        className="absolute inset-0 flex flex-col"
-        style={{
-          paddingTop: `${spec.padding.top * 100}%`,
-          paddingBottom: `${spec.padding.bottom * 100}%`,
-          paddingLeft: `${spec.padding.left * 100}%`,
-          paddingRight: `${spec.padding.right * 100}%`,
-          justifyContent: 'center',
-          alignItems: justify,
-        }}
-      >
-        <div
-          style={{
-            ...(spec.textBox.enabled
-              ? {
-                  backgroundColor: withOpacity(spec.textBox.color, spec.textBox.opacity),
-                  borderRadius: `${(spec.textBox.cornerRadius / CANVAS_HEIGHT) * 100}cqh`,
-                  padding: '2cqh 3cqh',
-                }
-              : {}),
-          }}
-        >
-          {lines.map((line, index) => (
-            <div
-              key={index}
-              style={{
-                // cqh = 1% of the container's height, so type scales with the preview.
-                fontSize: `${(spec.text.fontSize / CANVAS_HEIGHT) * 100}cqh`,
-                fontWeight: spec.text.fontWeight,
-                color: spec.text.color,
-                textAlign: spec.text.align,
-                lineHeight: spec.text.lineHeight,
-                letterSpacing: `${spec.text.letterSpacing}em`,
-                fontFamily: spec.text.fontFamily,
-                ...(textShadow ? { textShadow } : {}),
-                ...(spec.text.outline.enabled
-                  ? { WebkitTextStroke: `${(spec.text.outline.width / CANVAS_HEIGHT) * 100}cqh ${spec.text.outline.color}` }
-                  : {}),
-              }}
-            >
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Row({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <>
@@ -193,49 +104,4 @@ function Row({ label, value }: { label: string; value: string }): JSX.Element {
       <dd className="text-silver-400 truncate">{value}</dd>
     </>
   );
-}
-
-function backgroundCss(spec: ThemeSpec): string {
-  switch (spec.background.kind) {
-    case 'gradient':
-      return spec.background.value;
-    case 'solid':
-      return spec.background.value;
-    case 'camera':
-      return '#0A1421';
-    case 'image':
-    case 'video':
-      return '#050B14';
-  }
-}
-
-function describeBackground(spec: ThemeSpec): string {
-  return spec.background.kind === 'solid' ? spec.background.value : spec.background.kind;
-}
-
-/** Applies an opacity to a hex colour for the scrim box. */
-function withOpacity(hex: string, opacity: number): string {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!match) return hex;
-  const value = parseInt(match[1]!, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-}
-
-/** Field-level merge, matching mergeSpec in the main process. */
-function mergePreview(base: ThemeSpec, override: Partial<ThemeSpec>): ThemeSpec {
-  return {
-    background: { ...base.background, ...(override.background ?? {}) },
-    text: {
-      ...base.text,
-      ...(override.text ?? {}),
-      shadow: { ...base.text.shadow, ...(override.text?.shadow ?? {}) },
-      outline: { ...base.text.outline, ...(override.text?.outline ?? {}) },
-    },
-    padding: { ...base.padding, ...(override.padding ?? {}) },
-    textBox: { ...base.textBox, ...(override.textBox ?? {}) },
-    transition: { ...base.transition, ...(override.transition ?? {}) },
-  };
 }

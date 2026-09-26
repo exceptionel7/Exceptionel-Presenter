@@ -25,6 +25,7 @@ import { createCameraSourceRegistry } from './services/camera-source-registry.ts
 import { createHandlers } from './ipc/handlers.ts';
 import { registerIpc } from './ipc/register.ts';
 import { BRAND } from '../shared/brand.ts';
+import { DEFAULT_THEME_ID } from '../shared/domain/theme.ts';
 import type { AppInfo } from '../shared/ipc-contract.ts';
 import type { ErrorNotice } from '../shared/domain/errors.ts';
 
@@ -95,7 +96,7 @@ async function bootstrap(): Promise<void> {
   }
 
   const live = createLiveStateService({
-    initialThemeId: db.settings.get<string>('presentation.defaultThemeId', 'theme-modern-worship'),
+    initialThemeId: db.settings.get<string>('presentation.defaultThemeId', DEFAULT_THEME_ID),
   });
 
   const windows = createWindowManager({

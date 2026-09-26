@@ -8,6 +8,8 @@
  * and shell-independent. See docs/ARCHITECTURE.md §1.
  */
 
+import { DEFAULT_THEME_ID } from './theme.ts';
+
 export type LiveStatus = 'idle' | 'live' | 'black' | 'clear' | 'paused';
 
 /** A cue is any presentable unit in the service: a lyric slide, a verse, an image... */
@@ -16,7 +18,32 @@ export interface Cue {
   kind: 'lyric' | 'scripture' | 'slide' | 'image' | 'video' | 'camera' | 'announcement';
   /** Service item this cue belongs to, so we can report service progress. */
   itemId: string;
+  /**
+   * Operator-facing label: "Way Maker — Chorus". Shown in the running order and the confidence
+   * monitor. NOT what the audience reads.
+   */
   label: string;
+  /**
+   * The text the AUDIENCE reads, one entry per line as authored.
+   *
+   * Carried in the cue rather than looked up by the window that renders it, because the audience
+   * output is deliberately forbidden from reading the library — `OUTPUT_ALLOWED_CHANNELS` grants it
+   * no access to songs or services, and that restriction is worth more than the bytes saved. One
+   * broadcast therefore carries one complete truth, and the output can never be asked to paint a
+   * slide whose words it does not have.
+   *
+   * Empty for cues with nothing to read, such as a camera scene. Empty is honest; absent would
+   * leave every consumer guessing.
+   */
+  lines: readonly string[];
+  /**
+   * Theme this cue renders with, resolved when the service was opened.
+   *
+   * Per-cue rather than per-service: lyrics, scripture and camera scenes are themed differently in
+   * every church that has thought about it, and the seeded settings already name three separate
+   * theme ids for exactly that reason. Null means "use the service or application default".
+   */
+  themeId: string | null;
   /** Speaker notes — confidence monitor only, never the audience screen. */
   notes?: string;
 }
@@ -46,7 +73,7 @@ export type LiveIntent =
   | { type: 'stop' }
   | { type: 'setTheme'; themeId: string };
 
-export function createInitialLiveState(themeId = 'modern-worship'): LiveState {
+export function createInitialLiveState(themeId: string = DEFAULT_THEME_ID): LiveState {
   return {
     status: 'idle',
     activeCueId: null,

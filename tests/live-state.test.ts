@@ -10,11 +10,27 @@ import {
   type LiveState,
 } from '../src/shared/domain/live-state.ts';
 
+/**
+ * A cue with the fields these reducer tests do not care about filled in.
+ *
+ * `lines` and `themeId` are required on `Cue` deliberately — a cue with no body could reach the
+ * audience output and leave it with nothing to paint. The reducer is indifferent to both, so they
+ * are defaulted here rather than repeated on every fixture.
+ */
+const cue = (id: string, kind: Cue['kind'], itemId: string, label: string, lines: string[] = []): Cue => ({
+  id,
+  kind,
+  itemId,
+  label,
+  lines,
+  themeId: null,
+});
+
 const cues: Cue[] = [
-  { id: 'c1', kind: 'slide', itemId: 'i1', label: 'Welcome' },
-  { id: 'c2', kind: 'scripture', itemId: 'i2', label: 'John 3:16' },
-  { id: 'c3', kind: 'lyric', itemId: 'i3', label: 'Way Maker — Verse 1' },
-  { id: 'c4', kind: 'lyric', itemId: 'i3', label: 'Way Maker — Chorus' },
+  cue('c1', 'slide', 'i1', 'Welcome'),
+  cue('c2', 'scripture', 'i2', 'John 3:16'),
+  cue('c3', 'lyric', 'i3', 'Way Maker — Verse 1', ['You are here', 'moving in our midst']),
+  cue('c4', 'lyric', 'i3', 'Way Maker — Chorus', ['Way maker', 'Miracle worker']),
 ];
 
 const run = (state: LiveState, ...intents: LiveIntent[]): LiveState =>

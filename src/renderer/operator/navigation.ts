@@ -46,17 +46,10 @@ export const SECTIONS: readonly SectionDef[] = Object.freeze([
     label: 'Service',
     glyph: '≡',
     group: 'produce',
-    available: false,
-    phase: 'Phase 3 & 8',
+    available: true,
+    phase: 'Phase 3',
     requirement:
-      'The live production workspace: service playlist, preview and live output side by side, with transport controls.',
-    capabilities: [
-      'Drag-and-drop service running order',
-      'Preview alongside the live audience output',
-      'Previous / Next / Black / Clear / Live transport',
-      'Per-item theme overrides and speaker notes',
-      'Autosave with crash recovery',
-    ],
+      'The live production workspace: running order, preview and live output side by side, with transport controls. Reordering and editing arrive with the service builder in Phase 8.',
   },
   {
     id: 'songs',

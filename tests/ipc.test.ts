@@ -1,11 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase, type AppDatabase } from '../src/main/db/database.ts';
-import { createLiveStateService, cuesFromServiceItems } from '../src/main/services/live-state-service.ts';
+import { createLiveStateService } from '../src/main/services/live-state-service.ts';
 import { dispatch, isChannelAllowedForRole, type HandlerRegistry } from '../src/main/ipc/dispatcher.ts';
 import { createHandlers } from '../src/main/ipc/handlers.ts';
 import { IPC_CHANNELS, type AppInfo, type IpcResult } from '../src/shared/ipc-contract.ts';
-import type { LiveState } from '../src/shared/domain/live-state.ts';
+import type { Cue, LiveState } from '../src/shared/domain/live-state.ts';
+
+/**
+ * A cue with the fields these tests do not exercise filled in.
+ *
+ * `lines` and `themeId` are required on `Cue` on purpose: the audience output is forbidden from
+ * reading the library, so a cue that carried no text would leave it with nothing to paint. These
+ * tests are about routing and live state rather than content, so both are defaulted here.
+ */
+const cue = (id: string, kind: Cue['kind'], itemId: string, label: string): Cue => ({
+  id,
+  kind,
+  itemId,
+  label,
+  lines: [label],
+  themeId: null,
+});
 
 const APP_INFO: AppInfo = {
   name: 'Exceptionel Presenter',
@@ -323,8 +339,8 @@ test('a repository error surfaces as a failure rather than a crash', async () =>
 test('live intents flow through IPC and mutate authoritative state', async () => {
   const h = harness();
   h.live.setCues([
-    { id: 'c1', kind: 'slide', itemId: 'i1', label: 'Welcome' },
-    { id: 'c2', kind: 'lyric', itemId: 'i2', label: 'Verse 1' },
+    cue('c1', 'slide', 'i1', 'Welcome'),
+    cue('c2', 'lyric', 'i2', 'Verse 1'),
   ]);
 
   let state = unwrap<LiveState>(await h.call('live:intent', { type: 'goLive', cueId: 'c1' }));
@@ -345,7 +361,7 @@ test('live intents flow through IPC and mutate authoritative state', async () =>
 
 test('subscribers receive current state immediately on subscribe', () => {
   const live = createLiveStateService();
-  live.setCues([{ id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' }]);
+  live.setCues([cue('c1', 'slide', 'i1', 'A')]);
   live.apply({ type: 'goLive', cueId: 'c1' });
 
   const seen: LiveState[] = [];
@@ -356,7 +372,7 @@ test('subscribers receive current state immediately on subscribe', () => {
 
 test('broadcasts happen only on real change', () => {
   const live = createLiveStateService();
-  live.setCues([{ id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' }]);
+  live.setCues([cue('c1', 'slide', 'i1', 'A')]);
 
   const seen: LiveState[] = [];
   live.subscribe((s) => seen.push(s));
@@ -374,7 +390,7 @@ test('broadcasts happen only on real change', () => {
 
 test('unsubscribing during a broadcast does not break iteration', () => {
   const live = createLiveStateService();
-  live.setCues([{ id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' }]);
+  live.setCues([cue('c1', 'slide', 'i1', 'A')]);
 
   let bCalls = 0;
   let unsubscribeB: (() => void) | null = null;
@@ -400,12 +416,12 @@ test('unsubscribing during a broadcast does not break iteration', () => {
 test('deleting the live cue stops output rather than showing a phantom slide', () => {
   const live = createLiveStateService();
   live.setCues([
-    { id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' },
-    { id: 'c2', kind: 'slide', itemId: 'i2', label: 'B' },
+    cue('c1', 'slide', 'i1', 'A'),
+    cue('c2', 'slide', 'i2', 'B'),
   ]);
   live.apply({ type: 'goLive', cueId: 'c2' });
 
-  live.setCues([{ id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' }]);
+  live.setCues([cue('c1', 'slide', 'i1', 'A')]);
 
   const state = live.getState();
   assert.equal(state.status, 'idle');
@@ -415,17 +431,17 @@ test('deleting the live cue stops output rather than showing a phantom slide', (
 test('reordering above the live cue keeps the same slide on screen', () => {
   const live = createLiveStateService();
   live.setCues([
-    { id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' },
-    { id: 'c2', kind: 'slide', itemId: 'i2', label: 'B' },
+    cue('c1', 'slide', 'i1', 'A'),
+    cue('c2', 'slide', 'i2', 'B'),
   ]);
   live.apply({ type: 'goLive', cueId: 'c2' });
   assert.equal(live.getState().cueIndex, 1);
 
   // An item is inserted above the live one.
   live.setCues([
-    { id: 'c0', kind: 'slide', itemId: 'i0', label: 'New' },
-    { id: 'c1', kind: 'slide', itemId: 'i1', label: 'A' },
-    { id: 'c2', kind: 'slide', itemId: 'i2', label: 'B' },
+    cue('c0', 'slide', 'i0', 'New'),
+    cue('c1', 'slide', 'i1', 'A'),
+    cue('c2', 'slide', 'i2', 'B'),
   ]);
 
   const state = live.getState();
@@ -434,27 +450,11 @@ test('reordering above the live cue keeps the same slide on screen', () => {
   assert.equal(state.status, 'live');
 });
 
-test('cuesFromServiceItems skips headers and maps kinds', () => {
-  const cues = cuesFromServiceItems([
-    { id: 'i1', kind: 'header', label: 'Welcome' },
-    { id: 'i2', kind: 'song', label: 'Way Maker' },
-    { id: 'i3', kind: 'scripture', label: 'John 3:16' },
-    { id: 'i4', kind: 'camera_scene', label: 'Pastor Camera' },
-    { id: 'i5', kind: 'announcement', label: 'Youth Night' },
-  ]);
-  assert.equal(cues.length, 4, 'a header is an operator divider, not an audience cue');
-  assert.deepEqual(cues.map((c) => c.kind), ['lyric', 'scripture', 'camera', 'announcement']);
-  assert.equal(cues[0]?.itemId, 'i2');
-});
-
-test('speaker notes travel on the cue for the confidence monitor', () => {
-  const cues = cuesFromServiceItems([
-    { id: 'i1', kind: 'song', label: 'Way Maker', config: { notes: 'Key change after bridge' } },
-    { id: 'i2', kind: 'song', label: 'No Notes' },
-  ]);
-  assert.equal(cues[0]?.notes, 'Key change after bridge');
-  assert.equal(cues[1]?.notes, undefined);
-});
+/*
+ * Cue EXPANSION moved to shared/domain/cues.ts in Phase 3 and is covered by tests/cues.test.ts.
+ * It grew a `songs` argument (a song becomes one cue per lyric slide, not one per item), which is
+ * not something this file — about IPC routing and live state — should be constructing.
+ */
 
 // ── crash recovery through IPC ──────────────────────────────────────────────────
 
@@ -464,15 +464,34 @@ test('recovery:check reports nothing after a clean run', async () => {
   h.db.close();
 });
 
-test('recovery:restore reopens the crashed service and loads its cues', async () => {
+test('RECOVERY RESTORES THE SAME CUE LIST A NORMAL OPEN WOULD PRODUCE', async () => {
+  /*
+   * The one moment recovery matters is mid-service, which is the worst possible time to discover
+   * that the recovered cue list is not the one you had. Recovery previously used a different
+   * expansion from the operator's Open — one cue per item — so a recovered song presented a single
+   * slide instead of one per section. Both now go through `openService`.
+   */
   const h = harness();
+  const song = h.db.songs.save({
+    title: 'Way Maker',
+    sections: [
+      { kind: 'verse', label: 'Verse 1', sortOrder: 0, lyrics: 'You are here\nmoving in our midst', slideBreakMode: 'whole-section' },
+      { kind: 'chorus', label: 'Chorus', sortOrder: 1, lyrics: 'Way maker\nmiracle worker', slideBreakMode: 'whole-section' },
+    ],
+  });
   const service = h.db.services.save({
     name: 'Sunday Service',
     items: [
       { kind: 'header', label: 'Welcome', sortOrder: 0 },
-      { kind: 'song', label: 'Way Maker', sortOrder: 1 },
+      { kind: 'song', label: 'Way Maker', sortOrder: 1, refId: song.id },
     ],
   });
+
+  // What a normal open produces, for comparison.
+  const opened = unwrap<{ cues: { id: string }[] }>(await h.call('services:open', { serviceId: service.id }));
+  const expected = opened.cues.map((entry) => entry.id);
+  assert.equal(expected.length, 2, 'two sections become two cues; the header becomes none');
+
   const session = h.db.recovery.beginSession(service.id, service.name);
   h.db.recovery.heartbeat(session, { cueIndex: 1 }, service.id, service.name);
 
@@ -481,7 +500,11 @@ test('recovery:restore reopens the crashed service and loads its cues', async ()
 
   const restored = unwrap<{ id: string; name: string }>(await h.call('recovery:restore', { id: found.id }));
   assert.equal(restored.name, 'Sunday Service');
-  assert.equal(h.live.getCues().length, 1, 'the header must not become a cue');
+  assert.deepEqual(
+    h.live.getCues().map((entry) => entry.id),
+    expected,
+    'recovery and a normal open must agree, cue for cue',
+  );
 
   assert.equal(unwrap(await h.call('recovery:check')), null, 'restoring consumes the offer');
   h.db.close();
