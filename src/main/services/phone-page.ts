@@ -306,16 +306,55 @@ export const PHONE_PAGE_JS = String.raw`/*
       })
       .then(function (result) {
         if (result.status !== 200) {
-          throw new Error((result.body && result.body.error) || 'Pairing failed.');
+          var failure = new Error((result.body && result.body.error) || 'Pairing failed.');
+          failure.reason = result.body && result.body.reason;
+          throw failure;
         }
         el('step-pair').hidden = true;
         el('step-camera').hidden = false;
         openSignalStream();
       })
       .catch(function (error) {
+        /*
+         * Remedies are chosen from the server's failure reason rather than being generic.
+         *
+         * The distinction that matters most is a DEAD LINK versus a WRONG PIN. A page left open
+         * from an earlier run still holds its old token in the URL, and pairing sessions are held
+         * in memory only - so restarting Exceptionel Presenter invalidates every QR code. Telling
+         * someone to check the PIN in that situation sends them round in circles, because no PIN
+         * will ever work.
+         *
+         * NOTE: no backticks anywhere in this file's script. It is a String.raw template, so a
+         * backtick terminates it and an escaped one would survive into the served JavaScript.
+         */
+        var reason = error.reason;
+        var deadLink =
+          reason === 'invalid-link' || reason === 'expired' || reason === 'revoked' || reason === 'already-claimed';
+
+        if (deadLink) {
+          // Hide the PIN field: there is nothing useful to type until a new code is scanned.
+          el('pin').hidden = true;
+          el('pair').hidden = true;
+          showError('pair-error', error.message || 'This pairing code is no longer valid.', [
+            'Scan the CURRENT QR code shown in Exceptionel Presenter.',
+            'Codes expire after two minutes, and restarting the application creates new ones.',
+            'Do not reuse a page left open from an earlier attempt — close this tab and scan again.'
+          ]);
+          return;
+        }
+
+        if (reason === 'too-many-attempts') {
+          el('pin').hidden = true;
+          el('pair').hidden = true;
+          showError('pair-error', error.message || 'Too many incorrect attempts.', [
+            'Ask the operator to generate a new QR code, then scan it.'
+          ]);
+          return;
+        }
+
         showError('pair-error', error.message || 'Pairing failed.', [
-          'Check the PIN on the computer screen.',
-          'If the code has expired, ask the operator for a new QR code.'
+          'Check the six digits shown on the computer screen.',
+          'The PIN is on the computer, not in the QR code.'
         ]);
       })
       .then(function () {

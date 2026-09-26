@@ -201,12 +201,23 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
 
         if (!outcome.ok) {
           log(`[wireless-camera] claim refused for ${sessionId}: ${outcome.reason}`);
-          // 401 for every failure, with copy that never distinguishes "no such session" from
-          // "wrong PIN" — otherwise the response enumerates valid session ids.
+          /*
+           * A reason IS returned, because the phone genuinely needs to distinguish a dead link
+           * from a wrong PIN — telling someone to check the PIN when their QR code has expired
+           * sends them round in circles, since no PIN will ever work.
+           *
+           * But 'not-found' and 'bad-token' are collapsed into one opaque value. Reported
+           * separately they would reveal whether a session id exists, letting an attacker
+           * enumerate live sessions. Every other reason already presupposes a valid link, so
+           * none of them leak anything.
+           */
+          const reason =
+            outcome.reason === 'not-found' || outcome.reason === 'bad-token' ? 'invalid-link' : outcome.reason;
+
           return send(
             401,
             { 'content-type': 'application/json' },
-            JSON.stringify({ error: describeClaimFailure(outcome.reason), reason: outcome.reason }),
+            JSON.stringify({ error: describeClaimFailure(outcome.reason), reason }),
           );
         }
 
