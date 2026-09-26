@@ -127,6 +127,11 @@ export function CameraSection(): JSX.Element {
             className="btn-primary w-full"
             onClick={() => void addPhone()}
             disabled={createSession.pending || status?.running !== true}
+            title={
+              status?.running !== true
+                ? 'Wireless Camera is not running yet — see the status below'
+                : 'Generate a QR code for a phone to scan'
+            }
           >
             + Add Phone Camera
           </button>
@@ -498,19 +503,44 @@ function PreviewPanel({
               onClick={onGoLive}
               // A camera with no stream cannot go live; that would black the projector.
               disabled={busy || isLive || !showVideo}
+              title={
+                isLive
+                  ? 'This camera is already live'
+                  : showVideo
+                    ? 'Send this camera to the audience'
+                    : 'No picture yet — a camera cannot go live until video is arriving'
+              }
             >
               Go Live
             </button>
-            <button type="button" className="btn-secondary" onClick={onStop} disabled={busy || !isLive}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onStop}
+              disabled={busy || !isLive}
+              title={isLive ? 'Take this camera off the audience screen' : 'This camera is not live'}
+            >
               Stop
             </button>
             {/* A finished phone is cleared rather than disconnected — there is nothing left to cut. */}
             {state === 'stopped' || state === 'failed' || state === 'disconnected' ? (
-              <button type="button" className="btn-ghost" onClick={onRemove} disabled={busy}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={onRemove}
+                disabled={busy}
+                title="Clear this finished camera from the list"
+              >
                 Remove from list
               </button>
             ) : (
-              <button type="button" className="btn-ghost text-status-error" onClick={onDisconnect} disabled={busy}>
+              <button
+                type="button"
+                className="btn-ghost text-status-error"
+                onClick={onDisconnect}
+                disabled={busy}
+                title="End this phone's session and invalidate its credentials"
+              >
                 Disconnect
               </button>
             )}

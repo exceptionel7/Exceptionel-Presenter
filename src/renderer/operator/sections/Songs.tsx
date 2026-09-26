@@ -253,15 +253,39 @@ function SongEditor({
     <div className="p-5 space-y-4 max-w-4xl">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
+          {/*
+            A LABELLED, VISIBLY REQUIRED FIELD — not a heading with a placeholder in it.
+            
+            This input used to be bare: no label, no border, no required marker, its placeholder
+            reading "Song title" in the same grey as a section heading. Every other field on the
+            screen sat in a bordered box under a caption, so the one field that was mandatory was the
+            one that did not look like a field at all. People filled in the artist, the key, the CCLI
+            number and the lyrics, then found Save dead with nothing to explain why.
+          */}
+          <label className="field-label" htmlFor="song-title">
+            Title <span className="text-status-error">*</span>
+          </label>
           <input
-            className="w-full bg-transparent text-xl font-semibold text-silver-100 placeholder:text-silver-700 focus:outline-none"
-            placeholder="Song title"
+            id="song-title"
+            className={`field !h-10 !text-lg font-semibold ${
+              draft.title.trim() === '' ? '!border-status-error/60' : ''
+            }`}
+            placeholder="e.g. Great Is Thy Faithfulness"
             value={draft.title}
             onChange={(event) => set('title', event.target.value)}
+            aria-required="true"
+            aria-invalid={draft.title.trim() === ''}
+            aria-describedby="song-title-hint"
           />
-          <p className="mt-1 text-[11px] text-silver-600">
-            {draft.sections.length} section{draft.sections.length === 1 ? '' : 's'} · {slideCount} slide
-            {slideCount === 1 ? '' : 's'} when presented
+          <p id="song-title-hint" className="mt-1 text-[11px] text-silver-600">
+            {draft.title.trim() === '' ? (
+              <span className="text-status-error">A title is required before this song can be saved.</span>
+            ) : (
+              <>
+                {draft.sections.length} section{draft.sections.length === 1 ? '' : 's'} · {slideCount} slide
+                {slideCount === 1 ? '' : 's'} when presented
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -278,11 +302,20 @@ function SongEditor({
               </button>
             </>
           )}
+          {/*
+            A disabled control must always say WHY.
+            
+            `title` puts the reason in the browser tooltip and `aria-label` puts it where a screen
+            reader will read it, because a dimmed button with no explanation is indistinguishable
+            from a broken one — which is exactly how it was reported.
+          */}
           <button
             type="button"
             className="btn-primary"
             onClick={onSave}
             disabled={saving || draft.title.trim() === ''}
+            title={draft.title.trim() === '' ? 'Enter a title first' : 'Save this song to the library'}
+            {...(draft.title.trim() === '' ? { 'aria-label': 'Save — enter a title first' } : {})}
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

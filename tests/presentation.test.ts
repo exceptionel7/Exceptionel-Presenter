@@ -150,3 +150,82 @@ test('THE AUDIENCE OUTPUT STILL CANNOT READ THE LIBRARY', () => {
 test('opening a service is an operator action, not something a display can trigger', () => {
   assert.equal(CONFIDENCE_ALLOWED_CHANNELS.includes('services:open' as never), false);
 });
+
+
+// ── disabled controls must explain themselves ───────────────────────────────────
+
+test('EVERY DISABLED BUTTON SAYS WHY IT IS DISABLED', () => {
+  /*
+   * Reported from a real session: the Songs editor's Save button was dim and nothing on screen said
+   * why. The reason was a required, empty title — in a field with no label, no border and no required
+   * marker, whose placeholder read "Song title" in the same grey as a heading. Every other field sat
+   * in a bordered box under a caption, so the one mandatory field was the only one that did not look
+   * like a field. The operator filled in the artist, key, CCLI number and lyrics, then reasonably
+   * concluded the button was broken.
+   *
+   * A dimmed control with no explanation IS indistinguishable from a broken one. So every disabled
+   * button carries a `title` (a tooltip) or an `aria-label` giving the reason. Ten buttons across the
+   * application failed this when it was first written.
+   *
+   * Source-level and crude — it parses opening tags, not a DOM — but it holds the line on a rule that
+   * is otherwise impossible to remember at the moment it matters.
+   */
+  const files = [
+    'operator/App.tsx',
+    'operator/sections/Camera.tsx',
+    'operator/sections/Service.tsx',
+    'operator/sections/Settings.tsx',
+    'operator/sections/Songs.tsx',
+    'operator/sections/Themes.tsx',
+    'operator/sections/Dashboard.tsx',
+    'operator/sections/Help.tsx',
+  ];
+
+  const offenders: string[] = [];
+  let checked = 0;
+
+  for (const file of files) {
+    const source = read('renderer', ...file.split('/'));
+
+    for (const match of source.matchAll(/<button\b/g)) {
+      const start = match.index;
+
+      // Walk to the end of the opening tag, tracking brace depth so a JSX expression containing
+      // `>` (an arrow function, a comparison) does not terminate it early.
+      let index = start + match[0].length;
+      let depth = 0;
+      while (index < source.length) {
+        const character = source[index];
+        if (character === '{') depth += 1;
+        else if (character === '}') depth -= 1;
+        else if (character === '>' && depth === 0) break;
+        index += 1;
+      }
+
+      const tag = source.slice(start, index);
+      if (!tag.includes('disabled')) continue;
+
+      checked += 1;
+      if (!tag.includes('title=') && !tag.includes('aria-label=')) {
+        offenders.push(`${file}:${String(source.slice(0, start).split('\n').length)}`);
+      }
+    }
+  }
+
+  assert.ok(checked >= 10, `expected to find disabled buttons to check, found ${String(checked)}`);
+  assert.deepEqual(offenders, [], `these disabled buttons give no reason:\n  ${offenders.join('\n  ')}`);
+});
+
+test('the required song title is visibly required, not just enforced', () => {
+  const songs = read('renderer', 'operator', 'sections', 'Songs.tsx');
+
+  assert.match(songs, /htmlFor="song-title"/, 'the title field has a real label');
+  assert.match(songs, /aria-required="true"/);
+  assert.match(songs, /A title is required before this song can be saved/, 'and says so in plain words');
+  // A bare, borderless input styled like a heading is what caused the confusion.
+  assert.equal(
+    /placeholder="Song title"/.test(songs),
+    false,
+    'the field must not rely on a heading-styled placeholder to name itself',
+  );
+});

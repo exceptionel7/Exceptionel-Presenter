@@ -295,6 +295,7 @@ function ServicePicker({
                 type="button"
                 disabled={busy}
                 onClick={() => onOpen(service.id)}
+                title={`Open "${service.name}" and build its slides`}
                 className={`w-full text-left px-2.5 py-2 rounded-md text-[13px] transition-colors ${
                   openedId === service.id
                     ? 'bg-ink-750 text-silver-100'
@@ -418,6 +419,7 @@ function NewService({ onDone }: { onDone: (serviceId: string) => void }): JSX.El
         className="btn-primary w-full h-8 text-[12px]"
         disabled={saving || picked.length === 0}
         onClick={() => void create()}
+        title={picked.length === 0 ? 'Pick at least one song first' : 'Create this service and open it'}
       >
         {saving ? 'Creating…' : `Create service${picked.length > 0 ? ` (${String(picked.length)})` : ''}`}
       </button>
@@ -636,6 +638,7 @@ function Transport({
             className="btn-secondary"
             disabled={busy || !hasCues}
             onClick={() => onIntent({ type: 'previous' })}
+            title={hasCues ? 'Previous slide (Left arrow)' : 'Open a service first'}
           >
             ‹ Previous
           </button>
@@ -644,6 +647,7 @@ function Transport({
             className="btn-secondary"
             disabled={busy || !hasCues}
             onClick={() => onIntent({ type: 'next' })}
+            title={hasCues ? 'Next slide (Right arrow or Space)' : 'Open a service first'}
           >
             Next ›
           </button>

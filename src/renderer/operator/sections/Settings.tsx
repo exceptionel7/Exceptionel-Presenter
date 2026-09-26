@@ -137,6 +137,13 @@ function GeneralPane(): JSX.Element {
             className="btn-primary"
             disabled={!dirty || name.trim() === '' || save.pending}
             onClick={() => void commit()}
+            title={
+              name.trim() === ''
+                ? 'Enter a church name first'
+                : dirty
+                  ? 'Save these details'
+                  : 'No unsaved changes'
+            }
           >
             {save.pending ? 'Saving…' : 'Save profile'}
           </button>
