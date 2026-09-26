@@ -20,6 +20,8 @@ import { createWindowManager, type WindowManager } from './windows/window-manage
 import { installApplicationMenu } from './windows/menu.ts';
 import { createLiveStateService } from './services/live-state-service.ts';
 import { createAutosave } from './services/autosave.ts';
+import { createWirelessCameraService } from './services/wireless-camera-service.ts';
+import { createCameraSourceRegistry } from './services/camera-source-registry.ts';
 import { createHandlers } from './ipc/handlers.ts';
 import { registerIpc } from './ipc/register.ts';
 import { BRAND } from '../shared/brand.ts';
@@ -35,6 +37,7 @@ interface Runtime {
   teardownIpc: () => void;
   stopAutosave: () => void;
   flush: () => void;
+  stopWireless: () => void;
 }
 
 let runtime: Runtime | null = null;
@@ -172,6 +175,20 @@ async function bootstrap(): Promise<void> {
       live,
       appInfo,
       quit: () => app.quit(),
+      wireless,
+      // Loopback SDP and ICE between our own two renderers. No media crosses main.
+      relay: (to, message) => {
+        if (to === 'output') windows.ensureMediaHost();
+        windows.sendTo(to, 'media:relay', { from: to === 'output' ? 'operator' : 'output', message });
+      },
+      cameraSources: () => cameras.list(),
+      assignCameraSource: (id, assignment) => {
+        const sources = cameras.assign(id, assignment);
+        // Keep the phone's own machine in step, so `live` means the same thing on both sides.
+        const sessionId = cameras.sessionIdFor(id);
+        if (sessionId) wireless.setLive(sessionId, assignment === 'live');
+        return sources;
+      },
     }),
     roleOf: (event) => windows.roleOf(event.sender),
     onFailure: pushFailure,
@@ -181,6 +198,49 @@ async function bootstrap(): Promise<void> {
   // Output and confidence windows are pure render targets; this is how they learn.
   live.subscribe((state) => windows.broadcast('live:state', state));
   live.subscribeCues((cues) => windows.broadcast('live:cues', { cues }));
+
+  /*
+   * WIRELESS CAMERA.
+   *
+   * The OUTPUT window owns the phone's RTCPeerConnection, so it must exist before a phone can
+   * connect. Display management arrives in Phase 7, so until then it is opened as a hidden
+   * MEDIA HOST: a real renderer running WebRTC with `backgroundThrottling: false`, just not
+   * positioned on a projector yet. When Phase 7 lands, the same window gets placed on a display
+   * and nothing about the media path changes.
+   */
+  const cameras = createCameraSourceRegistry({
+    onChanged: (sources) => windows.broadcast('camera:sources', sources),
+    onLiveLost: (source) => {
+      // A frozen last frame on the projector is worse than black.
+      live.apply({ type: 'black' });
+      pushFailure({
+        domain: 'camera',
+        code: 'camera/live-source-lost',
+        message: `${source.name} was disconnected while live.`,
+        detail: source.unavailableReason ?? undefined,
+        remedies: [
+          'The audience screen has been blacked rather than left on a frozen frame.',
+          'Check the phone is awake and on the same Wi-Fi network, then reconnect it.',
+        ],
+        severity: 'warning',
+        retryable: true,
+        id: `err_live_lost_${Date.now().toString(36)}`,
+        occurredAt: new Date().toISOString(),
+      });
+    },
+  });
+
+  const wireless = createWirelessCameraService({
+    userDataDir: app.getPath('userData'),
+    onStatus: (status) => windows.sendTo('operator', 'wireless:status', status),
+    onPhonesChanged: (phones) => cameras.syncWireless(phones),
+    onSignalToDesktop: (sessionId, message) => {
+      // The output window is the canonical receiver, so phone signalling goes there.
+      windows.ensureMediaHost();
+      windows.sendTo('output', 'wireless:signal', { sessionId, message });
+    },
+    onLog: (line) => console.log(line),
+  });
 
   // Menu items emit named actions rather than acting directly, so the menu, keyboard
   // shortcuts and on-screen buttons all follow one code path.
@@ -199,6 +259,10 @@ async function bootstrap(): Promise<void> {
     teardownIpc,
     stopAutosave: autosave.stop,
     flush: autosave.flush,
+    // Section 20 and milestone test 12: quitting must terminate every camera session.
+    stopWireless: () => {
+      void wireless.stop();
+    },
   };
 
   windows.openOperator();
@@ -215,7 +279,7 @@ async function bootstrap(): Promise<void> {
  */
 app.on('before-quit', () => {
   if (!runtime) return;
-  const { db, sessionId, teardownIpc, stopAutosave, flush, windows } = runtime;
+  const { db, sessionId, teardownIpc, stopAutosave, flush, stopWireless, windows } = runtime;
   runtime = null;
 
   try {
@@ -223,6 +287,7 @@ app.on('before-quit', () => {
     // close the database so WAL is checkpointed into the main file.
     stopAutosave();
     flush();
+    stopWireless();
     teardownIpc();
     db.recovery.markCleanShutdown(sessionId);
     windows.closeAll();

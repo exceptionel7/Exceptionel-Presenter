@@ -18,12 +18,22 @@ import type { Cue, LiveIntent } from '../../shared/domain/live-state.ts';
 import type { AppDatabase } from '../db/database.ts';
 import type { HandlerRegistry } from './dispatcher.ts';
 import { cuesFromServiceItems, type LiveStateService } from '../services/live-state-service.ts';
+import type { WirelessCameraService } from '../services/wireless-camera-service.ts';
+import type { CameraSource } from '../../shared/domain/camera.ts';
+import { parseSignalMessage } from '../../shared/domain/signaling.ts';
 
 export interface HandlerContext {
   db: AppDatabase;
   live: LiveStateService;
   appInfo: () => AppInfo;
   quit: () => void;
+  /** Absent until the Wireless Camera service is constructed (it needs the app data path). */
+  wireless?: WirelessCameraService;
+  /** Relays loopback signalling between the output and operator renderers. */
+  relay?: (to: 'operator' | 'output', message: unknown) => void;
+  /** The unified camera source list, owned by the camera source registry. */
+  cameraSources?: () => CameraSource[];
+  assignCameraSource?: (id: string, assignment: string) => CameraSource[];
 }
 
 /** Thrown by not-yet-built channels so the UI can say exactly what is missing and why. */
@@ -171,5 +181,86 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
     'camera:profiles': () => notImplemented('Camera profiles', 'Phase 6', 'Requires the camera provider registry.'),
     'camera:saveProfile': () => notImplemented('Camera profiles', 'Phase 6', 'Requires the camera provider registry.'),
     'camera:deleteProfile': () => notImplemented('Camera profiles', 'Phase 6', 'Requires the camera provider registry.'),
+
+    // ── wireless camera ──────────────────────────────────────────────────────────
+    'wireless:status': () => requireWireless(context).status(),
+    'wireless:start': () => requireWireless(context).start(),
+    'wireless:stop': () => requireWireless(context).stop(),
+
+    'wireless:createSession': (payload) => {
+      const { label } = payload as { label: string };
+      return requireWireless(context).createSession(label);
+    },
+
+    'wireless:cancelSession': (payload) =>
+      requireWireless(context).cancelSession((payload as { sessionId: string }).sessionId),
+
+    'wireless:disconnect': (payload) =>
+      requireWireless(context).disconnect((payload as { sessionId: string }).sessionId),
+
+    'wireless:signal': (payload) => {
+      const { sessionId, message } = payload as { sessionId: string; message: unknown };
+
+      /*
+       * Validated with the SAME parser the HTTP layer uses. The renderer is far more trusted
+       * than a phone, but sharing one definition of the wire protocol is what stops the two
+       * paths drifting into accepting different things.
+       */
+      const parsed = parseSignalMessage(message);
+      if (!parsed.ok) {
+        const appFailure = failure({
+          domain: 'camera',
+          code: 'wireless/invalid-signal',
+          message: 'An invalid camera signalling message was rejected.',
+          detail: parsed.error,
+          remedies: ['This is a bug in Exceptionel Presenter. Please report it.'],
+          severity: 'warning',
+        });
+        throw Object.assign(new Error(appFailure.message), { failure: appFailure });
+      }
+
+      const wireless = requireWireless(context);
+
+      /*
+       * A `state` message from the output window describes OUR OWN peer, so it feeds the state
+       * machine rather than being relayed to the phone — which already tracks its own state and
+       * has no use for ours. Forwarding it instead of consuming it meant a desktop-side drop
+       * never registered anywhere.
+       */
+      if (parsed.value.kind === 'state') {
+        wireless.notifyDesktopPeerState(sessionId, parsed.value.state);
+        return;
+      }
+
+      // Offers and ICE candidates are genuinely for the phone.
+      wireless.sendToPhone(sessionId, parsed.value);
+    },
+
+    // ── unified camera sources ───────────────────────────────────────────────────
+    'camera:sources': () => context.cameraSources?.() ?? [],
+    'camera:assign': (payload) => {
+      const { id, assignment } = payload as { id: string; assignment: string };
+      return context.assignCameraSource?.(id, assignment) ?? [];
+    },
+
+    // ── renderer-to-renderer signalling relay ────────────────────────────────────
+    'media:relay': (payload) => {
+      const { to, message } = payload as { to: 'operator' | 'output'; message: unknown };
+      // Opaque by design: this carries loopback SDP and ICE between two of our own renderers.
+      // No media passes through main, and nothing here touches the library.
+      context.relay?.(to, message);
+    },
   };
+}
+
+function requireWireless(context: HandlerContext): WirelessCameraService {
+  if (context.wireless) return context.wireless;
+  const appFailure = failure({
+    domain: 'camera',
+    code: 'wireless/unavailable',
+    message: 'Wireless Camera is not available.',
+    remedies: ['Restart Exceptionel Presenter.'],
+    severity: 'error',
+  });
+  throw Object.assign(new Error(appFailure.message), { failure: appFailure });
 }

@@ -16,6 +16,7 @@ import { Wordmark } from '@ui/Logo.tsx';
 import { FailureNotice, NotImplemented, Spinner, StatusDot } from '@ui/primitives.tsx';
 import { SECTIONS, sectionById, type SectionId } from './navigation.ts';
 import { DashboardSection } from './sections/Dashboard.tsx';
+import { CameraSection } from './sections/Camera.tsx';
 import { SongsSection } from './sections/Songs.tsx';
 import { ThemesSection } from './sections/Themes.tsx';
 import { SettingsSection } from './sections/Settings.tsx';
@@ -206,6 +207,8 @@ function SectionView({ id }: { id: SectionId }): JSX.Element {
   switch (id) {
     case 'dashboard':
       return <DashboardSection />;
+    case 'camera':
+      return <CameraSection />;
     case 'songs':
       return <SongsSection />;
     case 'themes':

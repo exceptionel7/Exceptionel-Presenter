@@ -104,17 +104,10 @@ export const SECTIONS: readonly SectionDef[] = Object.freeze([
     label: 'Camera',
     glyph: '◉',
     group: 'produce',
-    available: false,
+    available: true,
     phase: 'Phase 6',
     requirement:
-      'Live camera input. Streams are opened locally in the renderer and never uploaded to the cloud.',
-    capabilities: [
-      'Detect, select, preview and switch USB cameras',
-      'Named camera profiles (Pastor, Worship, Audience)',
-      'Camera + Lyrics overlay with position and scrim controls',
-      'Camera + Scripture overlay',
-      'Extensible provider architecture for capture cards, NDI and RTSP',
-    ],
+      'Wireless phone cameras over Wi-Fi. Streams stay on the local network and are never uploaded. USB camera detection arrives in Phase 6.',
   },
   {
     id: 'presentation',

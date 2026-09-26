@@ -14,6 +14,8 @@ import {
   SERVICE_ITEM_KINDS,
   SONG_SECTION_KINDS,
 } from '../domain/entities.ts';
+import { CAMERA_ASSIGNMENTS } from '../domain/camera.ts';
+import { isPlausibleSessionId } from '../domain/pairing.ts';
 import type { IpcChannel } from '../ipc-contract.ts';
 import {
   vAccelerator,
@@ -36,6 +38,21 @@ import {
 
 /** Optional nullable text field — the shape most entity columns take. */
 const vText = (max: number) => vOptional(vNullable(vString({ max })));
+
+/**
+ * Pairing session id: six characters from the unambiguous alphabet.
+ *
+ * Not vId(), which permits any length and includes characters the pairing alphabet excludes.
+ * Reusing the same predicate the HTTP layer applies keeps one definition of a valid id.
+ */
+const vPairingSessionId = (): Validator<string> => ({
+  parse(input, path = '') {
+    if (typeof input !== 'string') return { ok: false, path, message: 'expected a session id' };
+    return isPlausibleSessionId(input)
+      ? { ok: true, value: input }
+      : { ok: false, path, message: 'not a valid pairing session id' };
+  },
+});
 
 const vJsonRecord = (): Validator<Record<string, unknown>> => ({
   parse(input, path = '') {
@@ -251,6 +268,31 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
   'recovery:check': vVoid(),
   'recovery:restore': vObject({ id: vId() }),
   'recovery:discard': vObject({ id: vId() }),
+
+  // ── wireless camera ───────────────────────────────────────────────────────────
+  'wireless:status': vVoid(),
+  'wireless:start': vVoid(),
+  'wireless:stop': vVoid(),
+  'wireless:createSession': vObject({ label: vString({ min: 1, max: 60 }) }),
+  'wireless:cancelSession': vObject({ sessionId: vPairingSessionId() }),
+  'wireless:disconnect': vObject({ sessionId: vPairingSessionId() }),
+  /**
+   * The signalling body is validated a second time, by parseSignalMessage in the handler, which
+   * enforces SDP shape and length caps. Doing it there rather than here keeps one definition of
+   * the wire protocol instead of two that could drift apart.
+   */
+  'wireless:signal': vObject({ sessionId: vPairingSessionId(), message: vUnknown() }),
+
+  'camera:sources': vVoid(),
+  'camera:assign': vObject({
+    id: vString({ min: 1, max: 128 }),
+    assignment: vEnum(CAMERA_ASSIGNMENTS),
+  }),
+
+  'media:relay': vObject({
+    to: vEnum(['operator', 'output'] as const),
+    message: vUnknown(),
+  }),
 });
 
 /** Fail-closed lookup used by the main-process dispatcher. */

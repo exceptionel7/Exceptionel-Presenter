@@ -43,6 +43,16 @@ export interface WindowManager {
   openConfidence(bounds: Electron.Rectangle | null): BrowserWindow;
   closeConfidence(): void;
   getConfidence(): BrowserWindow | null;
+  /**
+   * Guarantees the output renderer exists, opening it HIDDEN if necessary.
+   *
+   * The output window owns the phone's RTCPeerConnection, so it must be running before a phone
+   * can connect — but display assignment is Phase 7. A hidden window is a full renderer: it
+   * executes WebRTC and receives frames perfectly well, and `backgroundThrottling: false`
+   * keeps it from being throttled while unfocused. Phase 7 will position this same window on a
+   * projector without changing the media path.
+   */
+  ensureMediaHost(): BrowserWindow;
   /** Resolves the role of the window a WebContents belongs to, for IPC authorisation. */
   roleOf(contents: WebContents): WindowRole | null;
   /** Sends an event to every window permitted to receive it. */
@@ -244,8 +254,11 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
 
     output.once('ready-to-show', () => {
       if (!output || output.isDestroyed()) return;
+      // With no bounds this is a hidden media host (see ensureMediaHost): it must NOT appear on
+      // screen, or an operator would see a stray black window during a service.
+      if (!bounds) return;
       output.show();
-      if (bounds) output.setFullScreen(true);
+      output.setFullScreen(true);
     });
 
     // Keep the audience screen above other windows, but not above system dialogs.
@@ -317,6 +330,17 @@ export function createWindowManager(options: WindowManagerOptions): WindowManage
       output = null;
     },
     getOutput: () => (output && !output.isDestroyed() ? output : null),
+
+    ensureMediaHost() {
+      if (output && !output.isDestroyed()) return output;
+
+      // Created with no bounds, so openOutput leaves it hidden and windowed rather than
+      // fullscreen on a display. It exists purely to host the peer connection until Phase 7
+      // assigns it to a projector.
+      const created = openOutput(null);
+      console.log('[window:output] opened as a hidden media host for Wireless Camera');
+      return created;
+    },
 
     openConfidence,
     closeConfidence() {

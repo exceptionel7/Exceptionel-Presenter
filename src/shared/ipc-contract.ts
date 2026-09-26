@@ -29,6 +29,7 @@ import type {
 } from './domain/entities.ts';
 import type { Cue, LiveIntent, LiveState } from './domain/live-state.ts';
 import type { ErrorNotice } from './domain/errors.ts';
+import type { CameraSource } from './domain/camera.ts';
 
 /**
  * Renderer → main, request/response (`ipcRenderer.invoke`).
@@ -115,6 +116,29 @@ export interface IpcRequestMap {
   'recovery:check': { req: void; res: RecoverySnapshot | null };
   'recovery:restore': { req: { id: string }; res: Service | null };
   'recovery:discard': { req: { id: string }; res: void };
+
+  // wireless camera (phone over Wi-Fi)
+  'wireless:status': { req: void; res: WirelessStatus };
+  'wireless:start': { req: void; res: WirelessStatus };
+  'wireless:stop': { req: void; res: WirelessStatus };
+  'wireless:createSession': { req: { label: string }; res: PairingTicket };
+  'wireless:cancelSession': { req: { sessionId: string }; res: WirelessStatus };
+  'wireless:disconnect': { req: { sessionId: string }; res: WirelessStatus };
+  /** Desktop → phone signalling, sent from the window that owns the peer connection. */
+  'wireless:signal': { req: { sessionId: string; message: unknown }; res: void };
+
+  // camera sources shared across local and wireless providers
+  'camera:sources': { req: void; res: CameraSource[] };
+  'camera:assign': { req: { id: string; assignment: string }; res: CameraSource[] };
+
+  /**
+   * Renderer-to-renderer signalling relay.
+   *
+   * A MediaStream cannot cross a process boundary, so the operator preview receives the phone's
+   * video over a loopback RTCPeerConnection from the output window. Main relays the SDP and ICE
+   * between the two renderers; no media passes through it.
+   */
+  'media:relay': { req: { to: 'operator' | 'output'; message: unknown }; res: void };
 }
 
 /**
@@ -129,6 +153,14 @@ export interface IpcEventMap {
   'camera:changed': CameraDeviceInfo[];
   'error:notice': ErrorNotice;
   'settings:changed': { key: string; value: unknown };
+  /** Pairing progress and connected phones. */
+  'wireless:status': WirelessStatus;
+  /** Phone → desktop signalling, delivered to whichever window owns the peer. */
+  'wireless:signal': { sessionId: string; message: unknown };
+  /** The unified source list, after any change from any provider. */
+  'camera:sources': CameraSource[];
+  /** Relayed loopback signalling between the output and operator renderers. */
+  'media:relay': { from: 'operator' | 'output'; message: unknown };
   /** Emitted after a debounced autosave commits, so the UI can show "Saved 14:32". */
   'autosave:committed': { entity: string; at: string };
   /** Menu accelerators and global shortcuts arrive as named actions, not raw keys. */
@@ -194,6 +226,16 @@ export const IPC_CHANNELS = Object.freeze([
   'recovery:check',
   'recovery:restore',
   'recovery:discard',
+  'wireless:status',
+  'wireless:start',
+  'wireless:stop',
+  'wireless:createSession',
+  'wireless:cancelSession',
+  'wireless:disconnect',
+  'wireless:signal',
+  'camera:sources',
+  'camera:assign',
+  'media:relay',
 ] as const satisfies readonly IpcChannel[]);
 
 export const IPC_EVENTS = Object.freeze([
@@ -206,6 +248,10 @@ export const IPC_EVENTS = Object.freeze([
   'settings:changed',
   'autosave:committed',
   'action:invoke',
+  'wireless:status',
+  'wireless:signal',
+  'camera:sources',
+  'media:relay',
 ] as const satisfies readonly IpcEvent[]);
 
 /**
@@ -219,12 +265,23 @@ export const OUTPUT_ALLOWED_CHANNELS = Object.freeze([
   'live:getState',
   'themes:list',
   'camera:profiles',
+  /*
+   * The output window owns the phone's RTCPeerConnection, so it must be able to answer the
+   * phone and relay to the operator preview. Both are SIGNALLING ONLY — they carry SDP and ICE,
+   * never library data, and neither can alter a song, service or setting. The audience screen
+   * remains unable to mutate anything.
+   */
+  'wireless:signal',
+  'media:relay',
 ] as const satisfies readonly IpcChannel[]);
 
 export const OUTPUT_ALLOWED_EVENTS = Object.freeze([
   'live:state',
   'live:cues',
   'settings:changed',
+  'wireless:signal',
+  'media:relay',
+  'camera:sources',
 ] as const satisfies readonly IpcEvent[]);
 
 /** The confidence monitor additionally needs cue context and timers, still read-only. */
@@ -357,4 +414,56 @@ export interface ScriptureResult {
   verses: ScriptureVerse[];
   /** Attribution/licence line the theme may be required to display. */
   copyrightNotice: string | null;
+}
+
+// ── wireless camera ─────────────────────────────────────────────────────────────
+
+/**
+ * What the operator needs to display a QR code.
+ *
+ * The PIN is carried here for the OPERATOR'S SCREEN only; `pairingUrl` — the thing encoded into
+ * the QR image — deliberately does not contain it. That separation is the two-factor model:
+ * photographing the QR code is not enough, because the PIN exists only on the monitor.
+ */
+export interface PairingTicket {
+  sessionId: string;
+  /** Encode exactly this into the QR code. Contains the session id and pairing token. */
+  pairingUrl: string;
+  pin: string;
+  expiresAt: string;
+  label: string;
+  /** Shown beneath the code so the operator can read it out if scanning fails. */
+  displayUrl: string;
+}
+
+export interface WirelessPhone {
+  sessionId: string;
+  label: string;
+  /** A WirelessState value. */
+  state: string;
+  deviceLabel: string | null;
+  resolution: { width: number; height: number } | null;
+  fps: number | null;
+  latencyMs: number | null;
+  /** A ConnectionQuality value, or null when not measurable yet. */
+  quality: string | null;
+  audioEnabled: boolean;
+  expiresAt: string | null;
+  pin: string | null;
+}
+
+export interface WirelessStatus {
+  /** True once the HTTPS signalling server is listening. */
+  running: boolean;
+  /** Where a phone should connect, e.g. "https://192.168.1.100:8443". */
+  origin: string | null;
+  lanAddress: string | null;
+  interfaceName: string | null;
+  /** SHA-256 of the local certificate, so the operator can match what the phone shows. */
+  certificateFingerprint: string | null;
+  phones: WirelessPhone[];
+  /** Set when the server could not start, or there is no usable network. */
+  problem: string | null;
+  remedies: string[];
+  maxPhones: number;
 }

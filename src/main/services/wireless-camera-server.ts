@@ -41,6 +41,14 @@ export interface ServerOptions {
   /** Called when the phone sends something the desktop must act on. */
   onPhoneMessage?: (sessionId: string, message: SignalMessage) => void;
   onPhoneState?: (sessionId: string, state: PeerState) => void;
+  /**
+   * Fires for every claim attempt, accepted or not.
+   *
+   * Required rather than optional-in-spirit: pairing happens over HTTP, not as a signalling
+   * message, so without this the state machine never learns a phone tried to authenticate and
+   * would sit in `pairing` forever.
+   */
+  onClaimAttempt?: (sessionId: string, accepted: boolean) => void;
   onLog?: (line: string) => void;
 }
 
@@ -189,6 +197,8 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
         }
 
         const outcome = options.registry.claim({ sessionId, token, pin, deviceLabel });
+        options.onClaimAttempt?.(sessionId, outcome.ok);
+
         if (!outcome.ok) {
           log(`[wireless-camera] claim refused for ${sessionId}: ${outcome.reason}`);
           // 401 for every failure, with copy that never distinguishes "no such session" from

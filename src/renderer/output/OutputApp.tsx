@@ -30,6 +30,14 @@ export function OutputApp(): JSX.Element {
   useIpcEvent('live:state', setLive);
   useIpcEvent('live:cues', ({ cues: next }) => setCues(next));
 
+  /*
+   * This window owns every phone camera connection and republishes each stream to the operator
+   * preview over a loopback peer connection. It is mounted here rather than in the operator
+   * window because a MediaStream cannot cross a process boundary, so whichever renderer will
+   * eventually drive the projector has to be the one that receives the phone.
+   */
+  const wireless = useWirelessCameraHost();
+
   // Pull once on mount: this window may open mid-service, and must render the correct
   // slide immediately rather than staying black until the next operator action.
   useEffect(() => {
@@ -54,9 +62,23 @@ export function OutputApp(): JSX.Element {
         {/* z0 BASE */}
         {visibility.showBase && <div className="absolute inset-0 bg-[#050B14]" />}
 
-        {/* z1 CAMERA — NOT IMPLEMENTED until Phase 6. Nothing is drawn rather than a
-            placeholder, because a placeholder on an audience screen would be worse than
-            nothing. The layer exists so Phase 6 is additive. */}
+        {/*
+          z1 CAMERA — the phone's real stream.
+          Muted so the desktop never echoes phone audio into the room; the church PA handles
+          sound. Kept mounted but hidden when not visible, so a black-out does not tear down the
+          peer connection and force a re-buffer on restore.
+        */}
+        {wireless.liveStream && (
+          <video
+            key={wireless.liveSessionId ?? 'camera'}
+            ref={wireless.attachVideo}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ visibility: visibility.showCamera ? 'visible' : 'hidden' }}
+          />
+        )}
 
         {/* z2 MEDIA — NOT IMPLEMENTED until Phase 5. */}
 
