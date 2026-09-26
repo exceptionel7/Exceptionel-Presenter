@@ -306,9 +306,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// A renderer must never be able to talk to a remote host (Section 34).
+/**
+ * Blocks <webview> on EVERY WebContents, including any created in future (Section 34).
+ *
+ * WindowManager already does this per window; this is the catch-all, so a window added later
+ * cannot miss the guard by forgetting a line.
+ *
+ * The parameter is annotated rather than inferred because this listener is reached through an
+ * untyped WebContents in the local typecheck shims, where an inferred parameter would be an
+ * implicit `any`.
+ */
 app.on('web-contents-created', (_event, contents) => {
-  contents.on('will-attach-webview', (event) => event.preventDefault());
+  contents.on('will-attach-webview', (event: { preventDefault: () => void }) => event.preventDefault());
 });
 
 function reportFatal(error: unknown): void {
