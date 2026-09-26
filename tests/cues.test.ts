@@ -246,24 +246,46 @@ test('each kind of cue gets its own theme', () => {
   assert.equal(built.cues[1]?.themeId, 'theme-camera');
 });
 
-test('a kind-specific theme outranks a theme set on the service', () => {
-  // Someone who has chosen a lyrics theme means it for every service. A per-service theme is the
-  // fallback for kinds that have no choice of their own.
+test('A SERVICE THEME GOVERNS THE WHOLE SERVICE, OVERRIDING THE PER-TYPE DEFAULTS', () => {
+  /*
+   * The precedence here was originally the other way round, on the reasoning that someone who picked
+   * a lyrics theme means it everywhere. That was wrong, and wrong in the worst way: migration 0002
+   * seeds ALL FOUR per-type settings, so they are never absent — which meant a service theme could
+   * never take effect under any circumstances. The field existed, the operator could set it, and
+   * nothing happened. A control that silently does nothing is worse than no control at all.
+   */
   const built = buildCues({
-    service: service([item({ kind: 'song', label: 'Way Maker', refId: 'song_1' })], 'theme-christmas'),
+    service: service(
+      [
+        item({ kind: 'song', label: 'Way Maker', refId: 'song_1', sortOrder: 0 }),
+        item({ kind: 'camera_scene', label: 'Camera', sortOrder: 1 }),
+      ],
+      'theme-christmas',
+    ),
+    songs: [song({ sections: [section({ label: 'Verse 1', lyrics: 'a' })] })],
+    themes: THEMES,
+  });
+
+  assert.equal(built.cues[0]?.themeId, 'theme-christmas', 'lyrics follow the service theme');
+  assert.equal(built.cues[1]?.themeId, 'theme-christmas', 'and so does everything else in it');
+});
+
+test('with no service theme, each type uses its own default', () => {
+  const built = buildCues({
+    service: service([item({ kind: 'song', label: 'Way Maker', refId: 'song_1' })], null),
     songs: [song({ sections: [section({ label: 'Verse 1', lyrics: 'a' })] })],
     themes: THEMES,
   });
   assert.equal(built.cues[0]?.themeId, 'theme-lyrics');
 });
 
-test('a service theme is used when no kind-specific theme is configured', () => {
+test('the application default is the last resort, not the first choice', () => {
   const built = buildCues({
-    service: service([item({ kind: 'song', label: 'Way Maker', refId: 'song_1' })], 'theme-christmas'),
+    service: service([item({ kind: 'song', label: 'Way Maker', refId: 'song_1' })], null),
     songs: [song({ sections: [section({ label: 'Verse 1', lyrics: 'a' })] })],
     themes: { ...NO_THEMES, default: 'theme-app-default' },
   });
-  assert.equal(built.cues[0]?.themeId, 'theme-christmas', 'the service wins over the app default');
+  assert.equal(built.cues[0]?.themeId, 'theme-app-default');
 });
 
 test('with nothing configured at all the cue theme is null, not a guess', () => {

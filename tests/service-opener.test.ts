@@ -265,3 +265,90 @@ test('only the songs a service references are read', () => {
     for (const cue of opened.cues) assert.match(cue.label, /^Used Song/);
   });
 });
+
+test('A SERVICE THEME CHANGES EVERY SLIDE IN THAT SERVICE', () => {
+  /*
+   * This is how an operator changes what sits behind the lyrics. It has to actually work end to end
+   * through the database, because the precedence was originally inverted in a way that made the
+   * setting inert: the per-type defaults are all seeded, so they always won, and a service theme could
+   * never take effect.
+   */
+  withHarness(({ db, live }) => {
+    const songId = twoSectionSong(db);
+
+    const plain = db.services.save({
+      name: 'Ordinary Sunday',
+      items: [{ kind: 'song', label: 'Way Maker', sortOrder: 0, refId: songId }],
+    });
+    const defaults = openService(db, live, plain.id);
+    assert.ok(defaults);
+    assert.equal(defaults.cues[0]?.themeId, 'theme-modern-worship', 'the seeded lyrics default');
+
+    // The same service, now given a look of its own — including one built for camera work.
+    const themed = db.services.save({
+      id: plain.id,
+      name: 'Ordinary Sunday',
+      themeId: 'theme-live-worship',
+      items: plain.items.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        label: item.label,
+        sortOrder: item.sortOrder,
+        refId: item.refId,
+        config: item.config,
+      })),
+    });
+    assert.equal(themed.themeId, 'theme-live-worship');
+
+    const restyled = openService(db, live, plain.id);
+    assert.ok(restyled);
+    assert.equal(restyled.cues[0]?.themeId, 'theme-live-worship');
+    assert.equal(restyled.cues[1]?.themeId, 'theme-live-worship', 'every slide, not just the first');
+
+    // And that theme really is the camera one, so lyrics will sit over the live feed.
+    const spec = db.themes.resolve('theme-live-worship');
+    assert.ok(spec);
+    assert.equal(spec.background.kind, 'camera');
+    assert.equal(spec.textBox.enabled, true, 'with a panel behind the text for legibility');
+  });
+});
+
+test('restyling a service does not move the operator off their slide', () => {
+  /*
+   * `services:save` replaces the item rows. Cue ids derive from item ids, so saving without passing
+   * the existing ids would regenerate them — and `setCues` would then find the live cue gone and stop
+   * output. Changing a colour must not black the projector.
+   */
+  withHarness(({ db, live }) => {
+    const songId = twoSectionSong(db);
+    const service = db.services.save({
+      name: 'Sunday',
+      items: [{ kind: 'song', label: 'Way Maker', sortOrder: 0, refId: songId }],
+    });
+
+    const opened = openService(db, live, service.id);
+    assert.ok(opened);
+    live.apply({ type: 'goLive', cueId: opened.cues[1]?.id ?? '' });
+    assert.equal(live.getState().status, 'live');
+
+    db.services.save({
+      id: service.id,
+      name: service.name,
+      themeId: 'theme-minimal-worship',
+      items: service.items.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        label: item.label,
+        sortOrder: item.sortOrder,
+        refId: item.refId,
+        config: item.config,
+      })),
+    });
+
+    const restyled = openService(db, live, service.id);
+    assert.ok(restyled);
+    assert.equal(live.getState().status, 'live', 'still on air');
+    assert.equal(live.getState().cueIndex, 1, 'and on the same slide');
+    assert.equal(restyled.cues[1]?.themeId, 'theme-minimal-worship');
+  });
+});

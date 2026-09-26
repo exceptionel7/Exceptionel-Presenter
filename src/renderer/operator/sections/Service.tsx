@@ -23,7 +23,14 @@ import type { Service, ServiceItem, ServiceSummary, Theme } from '@shared/domain
 import type { Cue, LiveIntent, LiveState } from '@shared/domain/live-state.ts';
 import { resolveAudienceVisibility, serviceProgress } from '@shared/domain/live-state.ts';
 import type { SkippedItem } from '@shared/domain/cues.ts';
-import { fitSlideText, resolveThemeSpec, resolveThemeSpecOrBase } from '@shared/domain/theme.ts';
+import {
+  BASE_THEME_SPEC,
+  describeBackground,
+  fitSlideText,
+  mergeSpec,
+  resolveThemeSpec,
+  resolveThemeSpecOrBase,
+} from '@shared/domain/theme.ts';
 import type { OpenedService } from '@shared/ipc-contract.ts';
 import { client } from '@ui/client.ts';
 import { useIpcEvent, useQuery } from '@ui/hooks.ts';
@@ -155,6 +162,15 @@ export function ServiceSection(): JSX.Element {
           <p className="mx-3 mb-3 p-2.5 rounded-md bg-status-live/10 border border-status-live/40 text-[12px] text-status-live">
             {openFailure}
           </p>
+        )}
+
+        {opened !== null && (
+          <ServiceTheme
+            service={opened.service}
+            themes={themes}
+            busy={busy}
+            onChanged={() => void openService(opened.service.id)}
+          />
         )}
 
         <div className="flex-1 min-h-0 overflow-auto">
@@ -423,6 +439,111 @@ function NewService({ onDone }: { onDone: (serviceId: string) => void }): JSX.El
       >
         {saving ? 'Creating…' : `Create service${picked.length > 0 ? ` (${String(picked.length)})` : ''}`}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Chooses the look of the whole service — which is, in practice, how an operator changes what sits
+ * behind the lyrics.
+ *
+ * Nothing in the application could select a theme before this. The `services.theme_id` column
+ * existed, `buildCues` read it, the six built-in themes were seeded and previewed in the gallery, and
+ * there was no way to connect any of it. So the honest answer to "can I change the background?" was
+ * no, despite everything needed being present.
+ *
+ * Saving writes through `services:save` and then reopens, which rebuilds the cues. Item ids are
+ * passed back deliberately: `save` replaces the item rows, and without their ids they would be
+ * regenerated — cue ids derive from item ids, so the operator would lose their place in the running
+ * order just for changing a colour.
+ */
+function ServiceTheme({
+  service,
+  themes,
+  busy,
+  onChanged,
+}: {
+  service: Service;
+  themes: readonly Theme[];
+  busy: boolean;
+  onChanged: () => void;
+}): JSX.Element {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = async (themeId: string | null): Promise<void> => {
+    setSaving(true);
+    setError(null);
+
+    const result = await client.invoke('services:save', {
+      id: service.id,
+      name: service.name,
+      serviceDate: service.serviceDate,
+      themeId,
+      notes: service.notes,
+      // Ids preserved so cue ids stay stable and the operator keeps their position.
+      items: service.items.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        label: item.label,
+        sortOrder: item.sortOrder,
+        refId: item.refId,
+        config: item.config,
+      })),
+    });
+
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.failure.message);
+      return;
+    }
+    onChanged();
+  };
+
+  const current = themes.find((theme) => theme.id === service.themeId) ?? null;
+  const spec = current ? mergeSpec(BASE_THEME_SPEC, current.spec) : null;
+
+  return (
+    <div className="p-3 border-b border-ink-700">
+      <label className="field-label" htmlFor="service-theme">
+        Look of this service
+      </label>
+      <select
+        id="service-theme"
+        className="field"
+        value={service.themeId ?? ''}
+        disabled={busy || saving}
+        title="Choose the background and typography for every slide in this service"
+        onChange={(event) => void apply(event.target.value === '' ? null : event.target.value)}
+      >
+        <option value="">Per type (lyrics, scripture, camera defaults)</option>
+        {themes.map((theme) => (
+          <option key={theme.id} value={theme.id}>
+            {theme.name}
+          </option>
+        ))}
+      </select>
+
+      <p className="mt-1.5 text-[11px] text-silver-600 leading-snug">
+        {spec === null ? (
+          'Each kind of slide uses its own default. Choose a theme to give this whole service one look.'
+        ) : spec.background.kind === 'camera' ? (
+          // The distinction that matters for the question "can I put the camera behind the lyrics".
+          <>
+            Lyrics sit over the <strong className="text-silver-400">live camera</strong>, in the lower
+            third, with a dark panel behind the text.
+          </>
+        ) : spec.background.kind === 'image' || spec.background.kind === 'video' ? (
+          <span className="text-status-ready">
+            Image and video backgrounds are NOT IMPLEMENTED — the media library arrives in Phase 5.
+            This theme will present on black until then.
+          </span>
+        ) : (
+          <>Background: {describeBackground(spec)}. A live camera still shows through when one is on air.</>
+        )}
+      </p>
+
+      {error !== null && <p className="mt-1.5 text-[11px] text-status-live">{error}</p>}
     </div>
   );
 }

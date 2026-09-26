@@ -84,9 +84,21 @@ export function buildCues(input: {
   const themes = input.themes ?? NO_THEMES;
   const songsById = new Map(input.songs.map((song) => [song.id, song]));
 
-  // A theme set on the service overrides the application default, but never a kind-specific
-  // choice: someone who has picked a scripture theme means it for every service.
-  const fallbackTheme = input.service.themeId ?? themes.default;
+  /*
+   * A theme set on the SERVICE wins over the per-type defaults, for every slide in it.
+   *
+   * This is the reverse of what was written first, and the first version was wrong. Letting the
+   * per-type settings outrank a service theme sounded principled — "someone who picked a scripture
+   * theme means it for every service" — but those settings are always populated, because migration
+   * 0002 seeds all four. So a service theme could never take effect under any circumstances: the
+   * field existed, the operator could set it, and nothing would happen. A control that silently does
+   * nothing is worse than no control.
+   *
+   * The precedence is now the one the operator interface states plainly: leave the service theme
+   * unset and each type uses its own default; set it and it governs the whole service. That is what
+   * makes "this Christmas service looks different" expressible.
+   */
+  const serviceTheme = input.service.themeId;
 
   const cues: Cue[] = [];
   const skipped: SkippedItem[] = [];
@@ -141,7 +153,7 @@ export function buildCues(input: {
             // they are in, however deep the running order is scrolled.
             label: `${song.title} — ${slide.sectionLabel}`,
             lines: slide.lines,
-            themeId: themes.lyrics ?? fallbackTheme,
+            themeId: serviceTheme ?? themes.lyrics ?? themes.default,
             ...notesOf(item),
           });
         });
@@ -160,7 +172,7 @@ export function buildCues(input: {
           itemId: item.id,
           label: item.label,
           lines: [],
-          themeId: themes.camera ?? fallbackTheme,
+          themeId: serviceTheme ?? themes.camera ?? themes.default,
           ...notesOf(item),
         });
         continue;
