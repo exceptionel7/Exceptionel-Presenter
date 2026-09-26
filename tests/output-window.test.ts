@@ -92,3 +92,26 @@ test('the receiver waits for media before claiming a camera works', () => {
   // LAN only.
   assert.match(source, /iceServers: \[\]/);
 });
+
+
+test('measured statistics are sent to main, not relayed into a void', () => {
+  const source = read('useWirelessCameraHost.ts');
+
+  /*
+   * These figures used to be relayed to the OPERATOR window as a `media:relay`, where the loopback
+   * subscriber ignored them because they are not loopback signalling. Nothing else consumed them, so
+   * `WirelessCameraService.reportStats` was dead code and the operator's Latency and Connection
+   * readings stayed "—" while perfect video played on screen.
+   */
+  assert.match(source, /client\.invoke\('wireless:stats'/, 'stats go to main, which grades them');
+  assert.equal(
+    /to: 'operator',\s*message: \{ stats:/.test(source),
+    false,
+    'relaying stats to the operator window sends them nowhere',
+  );
+  assert.equal(
+    /kind: 'ping'/.test(source),
+    false,
+    'and the phone has no use for a ping it ignores',
+  );
+});

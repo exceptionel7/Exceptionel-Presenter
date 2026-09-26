@@ -284,6 +284,21 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
   'wireless:signal': vObject({ sessionId: vPairingSessionId(), message: vUnknown() }),
   'wireless:track': vObject({ sessionId: vPairingSessionId() }),
 
+  /*
+   * Bounded, not merely typed as numbers.
+   *
+   * A NaN or a negative round trip would propagate straight into the operator's latency reading, and
+   * an absurd figure is worse than no figure — Section 20 forbids presenting a latency that was not
+   * measured. The ceilings are deliberately generous: they reject nonsense, not a bad connection.
+   */
+  'wireless:stats': vObject({
+    sessionId: vPairingSessionId(),
+    packetLoss: vNumber({ min: 0, max: 1 }),
+    rttMs: vNumber({ min: 0, max: 60_000 }),
+    jitterMs: vNumber({ min: 0, max: 60_000 }),
+    fps: vOptional(vNumber({ min: 0, max: 1_000 })),
+  }),
+
   'camera:sources': vVoid(),
   'camera:assign': vObject({
     id: vString({ min: 1, max: 128 }),

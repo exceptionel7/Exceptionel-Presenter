@@ -57,16 +57,18 @@ export function useWirelessCameraHost(): WirelessCameraHost {
         },
 
         onStats: (sessionId, stats) => {
-          // Reported as a ping carrying measured values; main grades quality with the existing
-          // worst-of-three rule rather than trusting anything computed here.
-          void client.invoke('wireless:signal', {
-            sessionId,
-            message: { kind: 'ping', at: Date.now() },
-          });
-          void client.invoke('media:relay', {
-            to: 'operator',
-            message: { stats: { sessionId, ...stats } },
-          });
+          /*
+           * Straight to main, which grades them.
+           *
+           * This previously sent a `ping` to the phone (which ignores it) and relayed the numbers to
+           * the OPERATOR window as a `media:relay` — where the loopback subscriber discarded them,
+           * because they are not loopback signalling. So `reportStats` was never called by anything
+           * and the operator's Latency and Connection readings could never show a value.
+           *
+           * Main is the right destination regardless: it owns the state machine that decides whether
+           * the numbers are stale, and every window reads them from the same snapshot.
+           */
+          void client.invoke('wireless:stats', { sessionId, ...stats });
         },
 
         onClosed: (sessionId) => {

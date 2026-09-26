@@ -134,6 +134,18 @@ export interface IpcRequestMap {
    * handshake is not a picture.
    */
   'wireless:track': { req: { sessionId: string }; res: void };
+  /**
+   * Measured transport statistics, sampled from `getStats()` in the window that owns the peer
+   * connection.
+   *
+   * Raw measurements only — packet loss, round trip, jitter. Main grades them with the worst-of-three
+   * rule and halves the RTT for the one-way latency estimate, so the renderer cannot invent a
+   * flattering number and there is exactly one place where quality is decided.
+   */
+  'wireless:stats': {
+    req: { sessionId: string; packetLoss: number; rttMs: number; jitterMs: number; fps?: number };
+    res: void;
+  };
 
   // camera sources shared across local and wireless providers
   'camera:sources': { req: void; res: CameraSource[] };
@@ -242,6 +254,7 @@ export const IPC_CHANNELS = Object.freeze([
   'wireless:disconnect',
   'wireless:signal',
   'wireless:track',
+  'wireless:stats',
   'camera:sources',
   'camera:assign',
   'media:relay',
@@ -282,6 +295,7 @@ export const OUTPUT_ALLOWED_CHANNELS = Object.freeze([
    */
   'wireless:signal',
   'wireless:track',
+  'wireless:stats',
   'media:relay',
 ] as const satisfies readonly IpcChannel[]);
 

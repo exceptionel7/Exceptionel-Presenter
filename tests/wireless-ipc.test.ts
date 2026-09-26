@@ -131,9 +131,10 @@ test('the output window CAN do exactly what it needs, and nothing more', async (
     'live:getState',
     'themes:list',
     'camera:profiles',
-    // signalling only — SDP and ICE, never library data
+    // signalling and measurement only — SDP, ICE and getStats figures, never library data
     'wireless:signal',
     'wireless:track',
+    'wireless:stats',
     'media:relay',
   ].sort();
 
@@ -178,6 +179,61 @@ test('the output window reaching `connected` goes through wireless:track, not a 
     // The real route, called by the output window when RTP actually arrives.
     unwrap(await h.call('wireless:track', { sessionId: ticket.sessionId }, 'output'));
     assert.equal(h.service.status().phones[0]?.state, 'connected');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('MEASURED STATISTICS REACH THE OPERATOR, GRADED IN MAIN', async () => {
+  /*
+   * `reportStats` was unreachable from production code. The output window sent its getStats()
+   * figures to the OPERATOR window as a `media:relay`, where the loopback subscriber discarded them
+   * as not-loopback-signalling — so the service never graded anything and the operator's Latency and
+   * Connection readings were permanently "—" even with perfect video on screen.
+   */
+  const h = await harness();
+  try {
+    await h.call('wireless:start');
+    const ticket = unwrap<{ sessionId: string }>(await h.call('wireless:createSession', { label: 'Phone' }));
+    h.service.notifyClaim(ticket.sessionId, true);
+    unwrap(await h.call('wireless:track', { sessionId: ticket.sessionId }, 'output'));
+
+    unwrap(
+      await h.call(
+        'wireless:stats',
+        { sessionId: ticket.sessionId, packetLoss: 0, rttMs: 24, jitterMs: 2, fps: 30 },
+        'output',
+      ),
+    );
+
+    const phone = h.service.status().phones[0];
+    // Half the round trip is the one-way estimate (Section 20). 24 → 12.
+    assert.equal(phone?.latencyMs, 12);
+    assert.equal(phone?.quality, 'excellent');
+    assert.equal(phone?.fps, 30);
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('nonsensical statistics are rejected rather than presented as measurements', async () => {
+  // An absurd latency is worse than no latency: Section 20 forbids showing a figure that was not
+  // measured, and a NaN or negative round trip would propagate straight to the operator.
+  const h = await harness();
+  try {
+    for (const stats of [
+      { packetLoss: -0.1, rttMs: 20, jitterMs: 2 },
+      { packetLoss: 1.5, rttMs: 20, jitterMs: 2 },
+      { packetLoss: 0, rttMs: -5, jitterMs: 2 },
+      { packetLoss: 0, rttMs: Number.NaN, jitterMs: 2 },
+      { packetLoss: 0, rttMs: 20, jitterMs: -1 },
+      { packetLoss: 0, rttMs: 20 },
+    ]) {
+      expectFailure(
+        await h.call('wireless:stats', { sessionId: 'ABC234', ...stats }, 'output'),
+        'ipc/invalid-payload',
+      );
+    }
   } finally {
     await h.cleanup();
   }

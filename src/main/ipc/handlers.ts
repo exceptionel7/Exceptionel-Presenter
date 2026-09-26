@@ -265,6 +265,29 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       requireWireless(context).markTrackReceived(sessionId);
     },
 
+    /**
+     * Measured transport statistics from the window that owns the peer connection.
+     *
+     * The renderer reports raw measurements and nothing else. Grading happens in the service, which
+     * owns the worst-of-three rule and the one-way latency estimate — so there is a single place
+     * where "good" is defined, and the renderer cannot flatter a poor connection.
+     */
+    'wireless:stats': (payload) => {
+      const { sessionId, packetLoss, rttMs, jitterMs, fps } = payload as {
+        sessionId: string;
+        packetLoss: number;
+        rttMs: number;
+        jitterMs: number;
+        fps?: number;
+      };
+      requireWireless(context).reportStats(sessionId, {
+        packetLoss,
+        rttMs,
+        jitterMs,
+        ...(fps === undefined ? {} : { fps }),
+      });
+    },
+
     // ── unified camera sources ───────────────────────────────────────────────────
     'camera:sources': () => context.cameraSources?.() ?? [],
     'camera:assign': (payload) => {
