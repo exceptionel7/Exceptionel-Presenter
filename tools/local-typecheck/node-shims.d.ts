@@ -1,10 +1,14 @@
 /**
- * Minimal ambient declarations for `node:test` / `node:assert`.
+ * Minimal ambient Node declarations for LOCAL VERIFICATION ONLY.
  *
- * WHY THIS EXISTS: this sandbox has no network, so `@types/node` cannot be installed
- * (see docs/ENVIRONMENT.md). These shims let `tsc --noEmit` typecheck the test suite
- * here. Once you run `npm install` locally, `@types/node` supersedes this file and it
- * should be deleted.
+ * WHY THIS EXISTS: the build sandbox has no network, so `@types/node` cannot be installed (see
+ * docs/ENVIRONMENT.md) and nothing would typecheck there at all.
+ *
+ * DELIBERATELY OUTSIDE the project's tsconfig `include`. On a machine with the real `@types/node`
+ * installed, `declare const process` here would conflict with the genuine global declaration.
+ * These shims are passed to `tsc` only by the explicit local verification command in
+ * tools/local-typecheck/README.md — never by `npm run typecheck`, which uses the real types and
+ * remains the authoritative check.
  */
 declare module 'node:test' {
   export function test(name: string, fn: () => void | Promise<void>): void;
@@ -198,6 +202,8 @@ declare const process: {
   argv: string[];
   cwd(): string;
   exit(code?: number): never;
+  /** src/main/index.ts installs uncaughtException and unhandledRejection handlers. */
+  on(event: string, listener: (...args: any[]) => void): void;
 };
 
 /**

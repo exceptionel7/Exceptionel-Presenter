@@ -169,38 +169,12 @@ async function bootstrap(): Promise<void> {
     isPackaged: app.isPackaged,
   });
 
-  const teardownIpc = registerIpc({
-    handlers: createHandlers({
-      db,
-      live,
-      appInfo,
-      quit: () => app.quit(),
-      wireless,
-      // Loopback SDP and ICE between our own two renderers. No media crosses main.
-      relay: (to, message) => {
-        if (to === 'output') windows.ensureMediaHost();
-        windows.sendTo(to, 'media:relay', { from: to === 'output' ? 'operator' : 'output', message });
-      },
-      cameraSources: () => cameras.list(),
-      assignCameraSource: (id, assignment) => {
-        const sources = cameras.assign(id, assignment);
-        // Keep the phone's own machine in step, so `live` means the same thing on both sides.
-        const sessionId = cameras.sessionIdFor(id);
-        if (sessionId) wireless.setLive(sessionId, assignment === 'live');
-        return sources;
-      },
-    }),
-    roleOf: (event) => windows.roleOf(event.sender),
-    onFailure: pushFailure,
-  });
-
-  // Rebroadcast authoritative live state to every window that is allowed to see it.
-  // Output and confidence windows are pure render targets; this is how they learn.
-  live.subscribe((state) => windows.broadcast('live:state', state));
-  live.subscribeCues((cues) => windows.broadcast('live:cues', { cues }));
-
   /*
    * WIRELESS CAMERA.
+   *
+   * Declared BEFORE registerIpc, which closes over both of these. They are `const`, so
+   * referencing them from a handler created earlier threw a temporal-dead-zone
+   * ReferenceError at startup — the app would not boot at all.
    *
    * The OUTPUT window owns the phone's RTCPeerConnection, so it must exist before a phone can
    * connect. Display management arrives in Phase 7, so until then it is opened as a hidden
@@ -241,6 +215,36 @@ async function bootstrap(): Promise<void> {
     },
     onLog: (line) => console.log(line),
   });
+
+  const teardownIpc = registerIpc({
+    handlers: createHandlers({
+      db,
+      live,
+      appInfo,
+      quit: () => app.quit(),
+      wireless,
+      // Loopback SDP and ICE between our own two renderers. No media crosses main.
+      relay: (to, message) => {
+        if (to === 'output') windows.ensureMediaHost();
+        windows.sendTo(to, 'media:relay', { from: to === 'output' ? 'operator' : 'output', message });
+      },
+      cameraSources: () => cameras.list(),
+      assignCameraSource: (id, assignment) => {
+        const sources = cameras.assign(id, assignment);
+        // Keep the phone's own machine in step, so `live` means the same thing on both sides.
+        const sessionId = cameras.sessionIdFor(id);
+        if (sessionId) wireless.setLive(sessionId, assignment === 'live');
+        return sources;
+      },
+    }),
+    roleOf: (event) => windows.roleOf(event.sender),
+    onFailure: pushFailure,
+  });
+
+  // Rebroadcast authoritative live state to every window that is allowed to see it.
+  // Output and confidence windows are pure render targets; this is how they learn.
+  live.subscribe((state) => windows.broadcast('live:state', state));
+  live.subscribeCues((cues) => windows.broadcast('live:cues', { cues }));
 
   // Menu items emit named actions rather than acting directly, so the menu, keyboard
   // shortcuts and on-screen buttons all follow one code path.
