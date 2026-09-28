@@ -184,11 +184,31 @@ export function SlideCanvas({
           <div
             className="absolute inset-0 flex flex-col"
             style={{
-              // Safe-area insets as fractions of the canvas, keeping text off projector edges.
-              paddingTop: `${String(spec.padding.top * 100)}%`,
-              paddingBottom: `${String(spec.padding.bottom * 100)}%`,
-              paddingLeft: `${String(spec.padding.left * 100)}%`,
-              paddingRight: `${String(spec.padding.right * 100)}%`,
+              /*
+               * Safe-area insets in CONTAINER-QUERY UNITS, not percentages.
+               *
+               * This is the bug that was actually clipping text. In CSS, a percentage padding resolves
+               * against the containing block's WIDTH — for `padding-top` and `padding-bottom` as well as
+               * left and right. It is the mechanism behind the old aspect-ratio padding hack, and it is
+               * easy to write without noticing.
+               *
+               * On a 16:9 canvas the width is 1.78× the height, so the Live Worship theme's
+               * `padding.top: 0.55` was being applied as 55% of WIDTH — 98% of the height. Together with
+               * its bottom inset that came to 112% of the height, collapsing the content box to nothing;
+               * `justifyContent: center` then centred the text around that collapsed point, pushing it
+               * off the bottom edge where `overflow: hidden` removed whatever did not fit.
+               *
+               * The lower-third placement that looked correct was therefore an accident of the wrong
+               * padding, not the theme being honoured — and `fitSlideText`'s safe-area arithmetic, which
+               * was right all along, was computing for a box the CSS never produced.
+               *
+               * `cqh` is 1% of the container's HEIGHT and `cqw` 1% of its WIDTH, which is exactly what
+               * the spec's insets mean.
+               */
+              paddingTop: `${String(spec.padding.top * 100)}cqh`,
+              paddingBottom: `${String(spec.padding.bottom * 100)}cqh`,
+              paddingLeft: `${String(spec.padding.left * 100)}cqw`,
+              paddingRight: `${String(spec.padding.right * 100)}cqw`,
               justifyContent: 'center',
               alignItems: alignItemsFor(spec.text.align),
             }}

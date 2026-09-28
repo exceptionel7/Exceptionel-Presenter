@@ -312,3 +312,69 @@ test('the confidence monitor prefers the slide reference over the cue label', ()
   // Someone about to read aloud needs "John 3:17", not "John 3:16-18 (SMP)".
   assert.match(CONFIDENCE_APP, /current\.caption \?\? progress\.current\.label/);
 });
+
+
+// ── safe-area insets (the clipping bug) ──────────────────────────────────────────
+
+test('SAFE-AREA INSETS USE CONTAINER UNITS, NOT PERCENTAGES', () => {
+  /*
+   * The bug that was actually clipping text on the audience screen, reported twice from real sessions:
+   * a verse ending mid-word and no reference beneath it.
+   *
+   * In CSS a percentage padding resolves against the containing block's WIDTH — for `padding-top` and
+   * `padding-bottom` as much as for left and right. It is the mechanism behind the old aspect-ratio
+   * padding hack and it is very easy to write without noticing.
+   *
+   * On the 16:9 canvas the width is 1.78x the height, so the Live Worship theme's `padding.top: 0.55`
+   * was applied as 55% of WIDTH = 98% of HEIGHT. With its bottom inset that came to 112% of the height:
+   * the content box collapsed to LESS THAN ZERO, `justifyContent: center` centred the text around that
+   * collapsed point, and everything past the bottom edge was removed by `overflow: hidden`.
+   *
+   * The lower-third placement that looked right was an accident of the wrong padding, not the theme
+   * being honoured — and `fitSlideText`'s arithmetic, which was correct, was computing for a box the CSS
+   * never produced.
+   */
+  const textLayer = SLIDE_CANVAS.slice(
+    SLIDE_CANVAS.indexOf('z3 TEXT'),
+    SLIDE_CANVAS.indexOf('z4 FOREGROUND'),
+  );
+
+  // Vertical insets are fractions of HEIGHT, so they must be expressed in cqh.
+  assert.match(textLayer, /paddingTop: `\$\{String\(spec\.padding\.top \* 100\)\}cqh`/);
+  assert.match(textLayer, /paddingBottom: `\$\{String\(spec\.padding\.bottom \* 100\)\}cqh`/);
+  // Horizontal insets are fractions of WIDTH, so cqw.
+  assert.match(textLayer, /paddingLeft: `\$\{String\(spec\.padding\.left \* 100\)\}cqw`/);
+  assert.match(textLayer, /paddingRight: `\$\{String\(spec\.padding\.right \* 100\)\}cqw`/);
+
+  assert.equal(
+    /padding(?:Top|Bottom|Left|Right): `\$\{String\([^`]*\)\}%`/.test(textLayer),
+    false,
+    'a percentage inset silently resolves against width and collapses the box',
+  );
+});
+
+test('the container establishes BOTH axes, or cqw and cqh do not resolve', () => {
+  // `containerType: 'size'` queries both dimensions. `inline-size` would give cqw only, and every
+  // vertical inset would silently become zero.
+  assert.match(SLIDE_CANVAS, /containerType: 'size'/);
+  assert.equal(/containerType: 'inline-size'/.test(SLIDE_CANVAS), false);
+});
+
+test('a collapsed content box is arithmetically impossible for every built-in theme', () => {
+  /*
+   * Guards the class of failure rather than the one instance. Percentage padding turned a 37% content
+   * band into a negative one; this asserts that every seeded theme leaves real room once its insets are
+   * read the way the spec means them.
+   */
+  const seed = readFileSync(join(process.cwd(), 'src', 'main', 'db', 'migrations', '0002-seed.ts'), 'utf8');
+
+  const insets = [...seed.matchAll(/"padding":\s*\{\s*"top":\s*([0-9.]+),\s*"right":\s*([0-9.]+),\s*"bottom":\s*([0-9.]+),\s*"left":\s*([0-9.]+)/g)];
+  assert.ok(insets.length >= 6, `expected the seeded themes' insets, found ${String(insets.length)}`);
+
+  for (const [, top, right, bottom, left] of insets) {
+    const verticalBand = 1 - Number(top) - Number(bottom);
+    const horizontalBand = 1 - Number(left) - Number(right);
+    assert.ok(verticalBand > 0.1, `vertical band ${verticalBand.toFixed(2)} is too small to hold text`);
+    assert.ok(horizontalBand > 0.1, `horizontal band ${horizontalBand.toFixed(2)} is too small`);
+  }
+});
