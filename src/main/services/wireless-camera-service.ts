@@ -226,6 +226,22 @@ export function createWirelessCameraService(
   };
 
   /**
+   * Tears down the DESKTOP side of a connection.
+   *
+   * Section 18 requires that ending a camera actually ends it, and telling only the phone does not
+   * achieve that. Media flows peer to peer: when the phone stops, the desktop's receiving track merely
+   * MUTES, and its last decoded frame stays on screen. So pressing Disconnect mid-service left the
+   * congregation looking at a frozen still of whatever the camera had last pointed at, with no operator
+   * control over it — the audience screen showing something nobody had chosen.
+   *
+   * The output window closes its peer on `bye`, which unpublishes the loopback stream, which clears the
+   * operator's preview and live panes too. One message, every surface.
+   */
+  const endDesktopConnection = (sessionId: string, reason: string): void => {
+    options.onSignalToDesktop(sessionId, { kind: 'bye', reason });
+  };
+
+  /**
    * Advances the machine through authentication.
    *
    * Pairing happens over HTTP rather than as a signalling message, so without this the machine
@@ -324,6 +340,8 @@ export function createWirelessCameraService(
 
     async stop() {
       for (const sessionId of [...offerWatchdogs.keys()]) clearOfferWatchdog(sessionId);
+      // Stopping the service stops every camera, on the desktop as well as on the phones.
+      for (const sessionId of phones.keys()) endDesktopConnection(sessionId, 'Wireless Camera stopped');
       if (server) await server.stop();
       server = null;
       bound = null;
@@ -378,6 +396,8 @@ export function createWirelessCameraService(
 
     cancelSession(sessionId) {
       clearOfferWatchdog(sessionId);
+      // A cancelled pairing usually has no connection, but if it does it must go too.
+      endDesktopConnection(sessionId, 'Cancelled by the operator');
       // `remove`, not `revoke`: an explicitly cancelled pairing must free its slot at once.
       registry.remove(sessionId, 'Cancelled by the operator');
 
@@ -398,6 +418,8 @@ export function createWirelessCameraService(
       clearOfferWatchdog(sessionId);
       // Section 18: the connection must actually terminate and credentials must be invalidated.
       if (server) server.sendToPhone(sessionId, { kind: 'bye', reason: 'Disconnected by the operator' });
+      // BOTH ends. Telling only the phone leaves the desktop holding a frozen last frame.
+      endDesktopConnection(sessionId, 'Disconnected by the operator');
       registry.revoke(sessionId, 'Disconnected by the operator');
       apply(sessionId, 'stop');
       const status = buildStatus();

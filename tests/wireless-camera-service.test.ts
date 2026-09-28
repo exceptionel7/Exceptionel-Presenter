@@ -868,3 +868,94 @@ test('standby clears the no-offer watchdog rather than leaving it to fire', asyn
     await h.cleanup();
   }
 });
+
+
+// ── ending a camera must end it on BOTH sides ────────────────────────────────────
+
+/**
+ * Section 18: the connection must actually terminate.
+ *
+ * Telling only the phone does not achieve that. Media flows peer to peer, so when the phone stops, the
+ * desktop's receiving track merely MUTES and its last decoded frame stays on screen. Pressing Disconnect
+ * mid-service therefore left the congregation looking at a frozen still of whatever the camera had last
+ * been pointed at — and nothing the operator did could clear it.
+ */
+
+const byeToDesktop = (h: Awaited<ReturnType<typeof harness>>, sessionId: string): boolean =>
+  h.signals.some((entry) => entry.sessionId === sessionId && entry.message.kind === 'bye');
+
+test('DISCONNECT TEARS DOWN THE DESKTOP CONNECTION, NOT JUST THE PHONE', async () => {
+  const h = await harness();
+  try {
+    await h.service.start();
+    const ticket = h.service.createSession('Phone');
+    h.service.notifyClaim(ticket.sessionId, true);
+    h.service.markTrackReceived(ticket.sessionId);
+    assert.equal(h.service.status().phones[0]?.state, 'connected');
+
+    h.service.disconnect(ticket.sessionId);
+
+    assert.ok(
+      byeToDesktop(h, ticket.sessionId),
+      'the output window must be told, or it keeps showing a frozen frame on the projector',
+    );
+    assert.equal(h.service.status().phones[0]?.state, 'stopped');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('stopping the whole service tears down every desktop connection', async () => {
+  const h = await harness();
+  try {
+    await h.service.start();
+    const first = h.service.createSession('Phone 1');
+    const second = h.service.createSession('Phone 2');
+    h.service.notifyClaim(first.sessionId, true);
+    h.service.notifyClaim(second.sessionId, true);
+    h.service.markTrackReceived(first.sessionId);
+    h.service.markTrackReceived(second.sessionId);
+
+    await h.service.stop();
+
+    assert.ok(byeToDesktop(h, first.sessionId), 'phone 1');
+    assert.ok(byeToDesktop(h, second.sessionId), 'phone 2');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('cancelling a pairing also clears anything it had connected', async () => {
+  const h = await harness();
+  try {
+    await h.service.start();
+    const ticket = h.service.createSession('Phone');
+    h.service.cancelSession(ticket.sessionId);
+    assert.ok(byeToDesktop(h, ticket.sessionId));
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('a standby phone is NOT torn down by the operator — it stays paired', async () => {
+  /*
+   * The boundary of the rule above. Standby means the phone switched its camera off and is still
+   * paired; the service must not respond by ending the session it deliberately kept alive.
+   */
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+    h.service.markTrackReceived(phone.id);
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'standby', reason: 'stopped' }), 200);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.equal(h.service.status().phones[0]?.state, 'standby');
+    assert.equal(
+      await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }),
+      200,
+      'and its credentials are untouched',
+    );
+  } finally {
+    await h.cleanup();
+  }
+});
