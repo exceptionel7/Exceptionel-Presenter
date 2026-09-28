@@ -360,6 +360,18 @@ export function createWirelessCameraServer(options: ServerOptions): WirelessCame
           const { width, height, frameRate, hasAudio } = message.value;
           options.registry.recordMedia(sessionId, { width, height, frameRate, hasAudio });
         }
+        /*
+         * `standby` deliberately does NOT revoke.
+         *
+         * The phone has switched its camera off and is still paired, so its connection token must stay
+         * valid — that is the entire difference from `bye`, and the reason the two are separate kinds.
+         * Revoking here meant pressing STOP and then START produced a 401 that nothing looked at, and
+         * the phone waited on "CAMERA READY" for ever.
+         */
+        if (message.value.kind === 'standby') {
+          options.registry.recordState(sessionId, 'closed');
+        }
+
         if (message.value.kind === 'bye') {
           options.registry.revoke(sessionId, message.value.reason);
           options.onPhoneState?.(sessionId, 'closed');

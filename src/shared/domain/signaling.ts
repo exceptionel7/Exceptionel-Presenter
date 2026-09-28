@@ -17,7 +17,7 @@
  * a network, a browser or a peer connection.
  */
 
-export const SIGNAL_KINDS = ['offer', 'answer', 'ice', 'ready', 'bye', 'state', 'ping'] as const;
+export const SIGNAL_KINDS = ['offer', 'answer', 'ice', 'ready', 'standby', 'bye', 'state', 'ping'] as const;
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
 /** SDP payloads are large; this bounds them so a hostile client cannot exhaust memory. */
@@ -33,7 +33,23 @@ export type SignalMessage =
   | { kind: 'ice'; candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }
   /** Phone → desktop: camera permission granted, tracks available, ready to negotiate. */
   | { kind: 'ready'; width: number | null; height: number | null; frameRate: number | null; hasAudio: boolean }
-  /** Either direction: a clean, intentional shutdown. */
+  /**
+   * Phone → desktop: the camera has been switched off, but the PAIRING REMAINS VALID.
+   *
+   * Distinct from `bye`, and the distinction matters. "Stop my camera" and "end my session" are
+   * different intentions, and conflating them meant a volunteer who stopped the camera between songs
+   * to save battery had silently destroyed their pairing — pressing START again posted to a revoked
+   * session, got a 401 nobody looked at, and the phone sat on "CAMERA READY" for ever.
+   *
+   * After `standby` the phone may press START and be offered to again, with no new QR code.
+   */
+  | { kind: 'standby'; reason: string }
+  /**
+   * Either direction: a clean, intentional END OF SESSION. Credentials are invalidated.
+   *
+   * Sent by the operator's Disconnect and on application shutdown. A phone that sends this must
+   * scan a new QR code to return.
+   */
   | { kind: 'bye'; reason: string }
   /** Phone → desktop: local peer state, so the desktop can show an accurate status. */
   | { kind: 'state'; state: PeerState }
@@ -135,11 +151,12 @@ export function parseSignalMessage(input: unknown): ParseResult<SignalMessage> {
       };
     }
 
+    case 'standby':
     case 'bye': {
       const reason = raw['reason'];
       return {
         ok: true,
-        value: { kind: 'bye', reason: typeof reason === 'string' ? reason.slice(0, 200) : 'unspecified' },
+        value: { kind, reason: typeof reason === 'string' ? reason.slice(0, 200) : 'unspecified' },
       };
     }
 

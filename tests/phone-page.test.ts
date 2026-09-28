@@ -123,3 +123,53 @@ test('the phone shows the ICE state, so a photograph of the page is diagnosable'
   assert.match(PHONE_PAGE_JS, /oniceconnectionstatechange/);
   assert.match(PHONE_PAGE_JS, /pc\.connectionState \+ ' · ' \+ pc\.iceConnectionState/);
 });
+
+
+// ── stopping the camera versus ending the session ────────────────────────────────
+
+test('STOPPING THE CAMERA SENDS STANDBY, NOT BYE', () => {
+  /*
+   * Reported from a real session: stop the phone, start it again, and nothing connects.
+   *
+   * The STOP button used to post `bye`, which revoked the phone's credentials — so pressing START
+   * again posted to a dead session. Stopping a camera is not ending a session.
+   */
+  assert.match(PHONE_PAGE_JS, /kind: 'standby', reason: reason \|\| 'Camera stopped on phone'/);
+  assert.equal(
+    /kind: 'bye'/.test(PHONE_PAGE_JS),
+    false,
+    'the phone never ends its own session — the operator does that with Disconnect',
+  );
+});
+
+test('EVERY UPSTREAM MESSAGE CHECKS ITS RESPONSE STATUS', () => {
+  /*
+   * The second half of the same bug. `post()` ignored the HTTP status entirely, so a 401 from a revoked
+   * session was swallowed and the phone showed CAMERA READY with nothing wrong on screen. A silent
+   * failure is worse than a loud one.
+   */
+  assert.match(PHONE_PAGE_JS, /if \(response\.status === 401\) \{ sessionEnded\(\); \}/);
+  assert.match(PHONE_PAGE_JS, /function sessionEnded/);
+});
+
+test('a genuinely ended session says so and stops inviting retries', () => {
+  assert.match(PHONE_PAGE_JS, /SESSION ENDED/);
+  assert.match(PHONE_PAGE_JS, /This camera session has ended/);
+  assert.match(PHONE_PAGE_JS, /Scan the CURRENT QR code/);
+  // START must not be re-enabled over that message, or the operator will press it against a 401.
+  assert.match(PHONE_PAGE_JS, /if \(ended\) return;/);
+});
+
+test('a network drop is not mistaken for an ended session', () => {
+  // Out of range is recoverable; revoked is not. Claiming the wrong one sends the operator to the wrong
+  // remedy — hunting for a QR code when they only needed to walk back into Wi-Fi range.
+  assert.match(PHONE_PAGE_JS, /out of range, not ended/);
+  assert.match(PHONE_PAGE_JS, /readyState === 2/, 'only a browser that has given up is conclusive');
+});
+
+test('losing the page does not end the session', () => {
+  // Locking a phone or backgrounding the tab must not require re-pairing.
+  const pagehide = PHONE_PAGE_JS.slice(PHONE_PAGE_JS.indexOf("addEventListener('pagehide'"));
+  assert.equal(/kind: 'bye'/.test(pagehide), false);
+  assert.equal(/kind: 'standby'/.test(pagehide), false);
+});

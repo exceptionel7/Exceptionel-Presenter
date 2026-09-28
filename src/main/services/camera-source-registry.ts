@@ -119,6 +119,13 @@ function statusFromWirelessState(state: string, quality: string | null): CameraS
     case 'authenticating':
     case 'connecting':
       return 'connecting';
+    /*
+     * Paired with the camera off. Reported as `connecting` rather than `disconnected`, because the
+     * operator's next action differs: a standby phone needs a tap on the phone, a disconnected one
+     * needs a new QR code.
+     */
+    case 'standby':
+      return 'connecting';
     case 'failed':
       return 'error';
     case 'stopped':

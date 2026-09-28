@@ -219,6 +219,8 @@ export const PHONE_PAGE_JS = String.raw`/*
    * thrown away and the connection had nothing to pair with.
    */
   var pendingIce = [];
+  /** Set once the server has told us the session is gone, so nothing retries against it. */
+  var ended = false;
 
   var el = function (id) { return document.getElementById(id); };
 
@@ -401,18 +403,81 @@ export const PHONE_PAGE_JS = String.raw`/*
     };
 
     source.onerror = function () {
-      // EventSource retries automatically; only report once the camera was already running,
-      // so a transient blip does not alarm the user.
+      /*
+       * EventSource retries by itself, so a blip is not worth reporting. But a stream that is refused
+       * because the session was revoked will retry for ever against a 401, so the state is checked
+       * rather than assumed: 'readyState === CLOSED' means the browser has given up.
+       */
+      if (source.readyState === 2) {
+        fetch('/signal/send?s=' + encodeURIComponent(sessionId), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'ping', at: Date.now() })
+        }).then(function (response) {
+          if (response.status === 401) { sessionEnded(); }
+        }).catch(function () { /* out of range, not ended */ });
+        return;
+      }
       if (connected) setStatus('ready', 'RECONNECTING…');
     };
   }
 
+  /*
+   * Every upstream message. The RESPONSE STATUS IS CHECKED, which it previously was not.
+   *
+   * A revoked session answers 401, and swallowing that was the difference between "your session ended,
+   * scan the code again" and a phone sitting on CAMERA READY for ever with nothing wrong on screen.
+   */
   function post(message) {
     return fetch('/signal/send?s=' + encodeURIComponent(sessionId), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(message)
+    }).then(function (response) {
+      if (response.status === 401) { sessionEnded(); }
+      return response;
+    }).catch(function () {
+      // A network failure is not a dead session - the phone may simply be out of range, and
+      // EventSource will reconnect. Nothing is claimed either way.
+      return null;
     });
+  }
+
+  /*
+   * The session is gone and no amount of retrying will help.
+   *
+   * Says so, and removes the controls: leaving START enabled would invite the operator to press it
+   * repeatedly against a server that will keep refusing.
+   */
+  function sessionEnded() {
+    if (ended) return;
+    ended = true;
+
+    stopTracks();
+    stopStats();
+    if (pc) { try { pc.close(); } catch (error) { /* already closed */ } pc = null; }
+    if (abortStream) { abortStream(); abortStream = null; }
+
+    setStatus('off', 'SESSION ENDED');
+    el('start').disabled = true;
+    el('switch').disabled = true;
+    el('audio').disabled = true;
+    el('stop').disabled = true;
+    el('stat-conn').textContent = '-';
+
+    showError('camera-error', 'This camera session has ended.', [
+      'The operator disconnected this phone, or Exceptionel Presenter was restarted.',
+      'Scan the CURRENT QR code shown on the computer to connect again.'
+    ]);
+  }
+
+  /** Releases the camera. Shared by standby, session end and page unload. */
+  function stopTracks() {
+    if (stream) {
+      stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null;
+    }
+    el('preview').srcObject = null;
   }
 
   function drainPendingIce() {
@@ -684,11 +749,24 @@ export const PHONE_PAGE_JS = String.raw`/*
     }
     el('preview').srcObject = null;
 
+    /*
+     * STANDBY, not BYE.
+     *
+     * Stopping the camera is not ending the session. Sending 'bye' here revoked this phone's
+     * credentials, so pressing START again posted to a dead session - and because the status was
+     * never checked, the phone showed CAMERA READY and waited for an offer that could never come.
+     *
+     * 'standby' keeps the pairing alive, so START works immediately with no new QR code. The operator's
+     * Disconnect is what ends a session.
+     */
     if (pc) {
-      try { post({ kind: 'bye', reason: reason || 'Stopped on phone' }); } catch (error) { /* best effort */ }
+      try { post({ kind: 'standby', reason: reason || 'Camera stopped on phone' }); } catch (error) { /* best effort */ }
       pc.close();
       pc = null;
     }
+
+    // Never re-enable START over a session-ended message: it would invite a pointless retry.
+    if (ended) return;
 
     setStatus('off', 'CAMERA OFF');
     el('start').disabled = false;
@@ -703,6 +781,12 @@ export const PHONE_PAGE_JS = String.raw`/*
   }
 
   // Closing the tab or locking the phone must release the camera, not leave it held.
+  /*
+   * Closing the tab or locking the phone must release the camera, not leave it held.
+   *
+   * No 'bye' is sent: the session stays valid so reopening the page can resume. Losing the page is not
+   * the operator deciding the session is over.
+   */
   window.addEventListener('pagehide', function () {
     if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
     if (abortStream) abortStream();

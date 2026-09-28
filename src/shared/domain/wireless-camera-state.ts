@@ -18,6 +18,14 @@ export const WIRELESS_STATES = [
   'connected',
   'live',
   'reconnecting',
+  /**
+   * Paired, but the phone has switched its camera off.
+   *
+   * NOT the same as `stopped`. A phone in standby keeps its credentials and can send video again on
+   * one tap; a stopped one must scan a new QR code. Without this distinction, stopping the camera
+   * between songs to save battery destroyed the pairing.
+   */
+  'standby',
   'failed',
   'stopped',
 ] as const;
@@ -46,7 +54,14 @@ export const WIRELESS_EVENTS = [
   'connectionRestored',
   /** Gave up: ICE failed, or the reconnect window elapsed. */
   'connectionFailed',
-  /** Operator pressed Disconnect, or the phone pressed Stop. */
+  /**
+   * The phone switched its camera off but stayed paired.
+   *
+   * Recoverable by `trackReceived` with no re-pairing, which is the whole point of it being separate
+   * from `stop`.
+   */
+  'cameraStandby',
+  /** Operator pressed Disconnect, or the session genuinely ended. */
   'stop',
   /** Operator cleared a finished or failed camera from the list. */
   'reset',
@@ -82,6 +97,7 @@ const TRANSITIONS: Readonly<Record<WirelessState, Partial<Record<WirelessEvent, 
   connecting: {
     trackReceived: 'connected',
     connectionFailed: 'failed',
+    cameraStandby: 'standby',
     /*
      * `connectionInterrupted` is deliberately absent.
      *
@@ -97,6 +113,7 @@ const TRANSITIONS: Readonly<Record<WirelessState, Partial<Record<WirelessEvent, 
     goLive: 'live',
     connectionInterrupted: 'reconnecting',
     connectionFailed: 'failed',
+    cameraStandby: 'standby',
     stop: 'stopped',
     // Re-firing trackReceived is harmless — it happens when the phone switches camera and
     // replaceTrack surfaces a new track on the same connection.
@@ -106,6 +123,9 @@ const TRANSITIONS: Readonly<Record<WirelessState, Partial<Record<WirelessEvent, 
     leaveLive: 'connected',
     connectionInterrupted: 'reconnecting',
     connectionFailed: 'failed',
+    // A phone switching its camera off while live takes the picture off the projector. The operator
+    // sees "Camera off", not a frozen frame.
+    cameraStandby: 'standby',
     stop: 'stopped',
     trackReceived: 'live',
   },
@@ -113,6 +133,16 @@ const TRANSITIONS: Readonly<Record<WirelessState, Partial<Record<WirelessEvent, 
     connectionRestored: 'connected',
     connectionFailed: 'failed',
     trackReceived: 'connected',
+    cameraStandby: 'standby',
+    stop: 'stopped',
+  },
+  /*
+   * Paired with the camera off. The ONLY difference from `stopped` that matters: a real track brings it
+   * straight back, with no new QR code.
+   */
+  standby: {
+    trackReceived: 'connected',
+    connectionFailed: 'failed',
     stop: 'stopped',
   },
   failed: {
@@ -178,6 +208,9 @@ export function describeWirelessState(state: WirelessState): string {
       return 'Live';
     case 'reconnecting':
       return 'Reconnecting';
+    case 'standby':
+      // Named for what the operator must understand: the phone is still paired.
+      return 'Camera off — still paired';
     case 'failed':
       return 'Connection failed';
     case 'stopped':
@@ -196,6 +229,9 @@ export function wirelessStateTone(state: WirelessState): 'live' | 'ok' | 'ready'
     case 'authenticating':
     case 'connecting':
     case 'reconnecting':
+    // Amber rather than grey: it is paired and one tap from returning, which is a different thing
+    // from a dead camera the operator has to re-pair.
+    case 'standby':
       return 'ready';
     case 'failed':
       return 'error';

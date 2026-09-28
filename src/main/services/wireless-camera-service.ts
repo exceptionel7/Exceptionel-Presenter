@@ -280,6 +280,20 @@ export function createWirelessCameraService(
           // machine deliberately stays in `connecting` until a real remote track arrives.
           if (message.kind === 'ready') armOfferWatchdog(sessionId);
           if (message.kind === 'bye') clearOfferWatchdog(sessionId);
+
+          /*
+           * The phone switched its camera off but stayed paired.
+           *
+           * Moves to `standby` rather than `stopped`, so the operator sees "Camera off — still paired"
+           * and a single tap on the phone brings the picture back with no new QR code. The message is
+           * still forwarded, so the output window can close its peer connection and stop showing a
+           * frozen last frame.
+           */
+          if (message.kind === 'standby') {
+            clearOfferWatchdog(sessionId);
+            apply(sessionId, 'cameraStandby');
+          }
+
           options.onSignalToDesktop(sessionId, message);
         },
         onClaimAttempt: notifyClaim,

@@ -309,3 +309,47 @@ test('no state is a dead end except by design', () => {
     assert.ok(allowedEvents(state).length > 0, `${state} has no way out`);
   }
 });
+
+
+// ── standby (the reconnect bug) ──────────────────────────────────────────────────
+
+test('A PHONE IN STANDBY COMES BACK WITHOUT RE-PAIRING', () => {
+  /*
+   * The state that fixes "disconnect and reconnect makes no connection". `stopped` is terminal — only
+   * `reset` leaves it — which is correct for a session the operator ended. But a phone that merely
+   * switched its camera off must return on one tap, so it needs a state a real track can leave.
+   */
+  assert.equal(run('connected', 'cameraStandby'), 'standby');
+  assert.equal(run('connected', 'cameraStandby', 'trackReceived'), 'connected');
+  assert.equal(run('live', 'cameraStandby', 'trackReceived'), 'connected');
+
+  // And it is reachable from every state that could plausibly be interrupted this way.
+  for (const state of ['connecting', 'connected', 'live', 'reconnecting'] as const) {
+    assert.equal(canTransition(state, 'cameraStandby'), true, state);
+  }
+});
+
+test('standby is NOT terminal, and stopped still is', () => {
+  // The whole distinction. Conflating them is what destroyed the pairing.
+  assert.equal(isTerminal('standby'), false);
+  assert.equal(isTerminal('stopped'), true);
+  assert.equal(canTransition('standby', 'trackReceived'), true);
+  assert.equal(canTransition('stopped', 'trackReceived'), false);
+});
+
+test('a standby camera holds no stream and cannot go live', () => {
+  // There is no picture, so it must not be offered to the projector and its metrics must be cleared.
+  assert.equal(hasStream('standby'), false);
+  assert.equal(canGoLive('standby'), false);
+  assert.equal(metricsAreStale('standby'), true);
+});
+
+test('standby is still stoppable, so Disconnect always works', () => {
+  assert.equal(run('standby', 'stop'), 'stopped');
+});
+
+test('the operator label for standby says the pairing survives', () => {
+  // "Stopped" would send the operator hunting for a QR code they do not need.
+  const label = describeWirelessState('standby');
+  assert.match(label, /still paired/i, `got "${label}"`);
+});

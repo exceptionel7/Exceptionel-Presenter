@@ -426,11 +426,14 @@ function PreviewPanel({
    */
   const showVideo = stream !== null && hasStream(state);
   const placeholder =
-    state === 'connecting' || state === 'authenticating'
-      ? 'Waiting for video…'
-      : state === 'reconnecting'
-        ? 'Reconnecting…'
-        : 'No video signal';
+    state === 'standby'
+      // The distinction the operator needs: nothing is broken, and no re-pairing is required.
+      ? 'Camera off on the phone — tap Start there'
+      : state === 'connecting' || state === 'authenticating'
+        ? 'Waiting for video…'
+        : state === 'reconnecting'
+          ? 'Reconnecting…'
+          : 'No video signal';
 
   useEffect(() => {
     const element = videoRef.current;

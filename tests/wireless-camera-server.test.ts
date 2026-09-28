@@ -774,3 +774,104 @@ test('losing a signalling stream is NOT reported as losing the camera', async ()
     await h.stop();
   }
 });
+
+
+// ── standby: stopping the camera is not ending the session ───────────────────────
+
+/**
+ * Reported from a real session: "when I disconnect the phone and reconnect it no connection is made."
+ *
+ * The cause was a design error of mine. The phone's STOP CAMERA button posted `bye`, the server treated
+ * `bye` as end-of-session and revoked the connection token — so pressing START again posted to a dead
+ * session, got a 401 that the phone never checked, and sat on "CAMERA READY" waiting for an offer that
+ * could never arrive.
+ *
+ * "Stop my camera" and "end my session" are different intentions. `standby` is the first; `bye` remains
+ * the second.
+ */
+
+test('STANDBY DOES NOT REVOKE THE SESSION, SO THE PHONE CAN START AGAIN', async () => {
+  const h = await harness();
+  try {
+    const session = pairedSession(h);
+
+    await withTls(async () => {
+      const send = (body: unknown): Promise<Response> =>
+        fetch(`${h.base}/signal/send?s=${session.id}`, {
+          method: 'POST',
+          headers: { cookie: session.cookie, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      // The phone reports a camera, then stops it.
+      assert.equal((await send({ kind: 'ready', hasAudio: false })).status, 200);
+      assert.equal((await send({ kind: 'standby', reason: 'Camera stopped on phone' })).status, 200);
+
+      // THE CRUCIAL ASSERTION: the credentials still work, so START can be pressed again.
+      const again = await send({ kind: 'ready', hasAudio: false });
+      assert.equal(again.status, 200, 'a standby phone must still be able to send a fresh ready');
+
+      // And the signalling stream is still authorised.
+      const stream = await fetch(`${h.base}/signal/stream?s=${session.id}`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(stream.status, 200);
+      await stream.body!.cancel();
+    });
+  } finally {
+    await h.stop();
+  }
+});
+
+test('BYE STILL REVOKES, BECAUSE THAT IS WHAT ENDS A SESSION', async () => {
+  // The other half of the distinction. Operator Disconnect must genuinely invalidate credentials.
+  const h = await harness();
+  try {
+    const session = pairedSession(h);
+
+    await withTls(async () => {
+      const send = (body: unknown): Promise<Response> =>
+        fetch(`${h.base}/signal/send?s=${session.id}`, {
+          method: 'POST',
+          headers: { cookie: session.cookie, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      assert.equal((await send({ kind: 'ready', hasAudio: false })).status, 200);
+      assert.equal((await send({ kind: 'bye', reason: 'done' })).status, 200);
+
+      assert.equal(
+        (await send({ kind: 'ready', hasAudio: false })).status,
+        401,
+        'after bye the token must be dead — otherwise Disconnect means nothing',
+      );
+
+      const stream = await fetch(`${h.base}/signal/stream?s=${session.id}`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(stream.status, 401, 'and the stream is refused too');
+    });
+  } finally {
+    await h.stop();
+  }
+});
+
+test('standby is forwarded to the desktop so it stops showing a frozen frame', async () => {
+  const h = await harness();
+  try {
+    const session = pairedSession(h);
+
+    await withTls(async () => {
+      await fetch(`${h.base}/signal/send?s=${session.id}`, {
+        method: 'POST',
+        headers: { cookie: session.cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'standby', reason: 'Camera stopped on phone' }),
+      });
+    });
+
+    const forwarded = h.phoneMessages.at(-1);
+    assert.equal(forwarded?.message.kind, 'standby', 'the output window must learn about it');
+  } finally {
+    await h.stop();
+  }
+});

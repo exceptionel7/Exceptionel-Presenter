@@ -781,3 +781,90 @@ test('a phone that IS offered to produces no complaint', async () => {
     await h.cleanup();
   }
 });
+
+
+// ── the full stop-and-restart cycle ──────────────────────────────────────────────
+
+test('A PHONE CAN STOP AND RESTART ITS CAMERA WITHOUT RE-PAIRING', async () => {
+  /*
+   * The end-to-end shape of the reported bug: "when I disconnect the phone and reconnect it no
+   * connection is made."
+   *
+   * Driven through the service's own seams, so it covers the state machine, the standby event and the
+   * capacity accounting together rather than any one of them in isolation.
+   */
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+    assert.equal(h.service.status().phones[0]?.state, 'connecting');
+
+    // Video arrives.
+    h.service.markTrackReceived(phone.id);
+    assert.equal(h.service.status().phones[0]?.state, 'connected');
+
+    // The operator puts it on the projector.
+    h.service.setLive(phone.id, true);
+    assert.equal(h.service.status().phones[0]?.state, 'live');
+
+    // The phone stops its camera. Still paired, so the operator is told exactly that.
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'standby', reason: 'Camera stopped' }), 200);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const standby = h.service.status().phones[0];
+    assert.equal(standby?.state, 'standby');
+    assert.equal(standby?.quality, null, 'and stale metrics are cleared with the picture');
+    assert.equal(standby?.latencyMs, null);
+
+    // THE CRUCIAL PART: the same credentials still work, and a track brings it straight back.
+    assert.equal(
+      await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }),
+      200,
+      'the session must still be valid after standby',
+    );
+
+    h.service.markTrackReceived(phone.id);
+    assert.equal(h.service.status().phones[0]?.state, 'connected', 'back without a new QR code');
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('the operator Disconnect still genuinely ends a session', async () => {
+  // The other side of the distinction: Disconnect must invalidate credentials, or it means nothing.
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+    h.service.markTrackReceived(phone.id);
+
+    h.service.disconnect(phone.id);
+    assert.equal(h.service.status().phones[0]?.state, 'stopped');
+
+    assert.equal(
+      await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }),
+      401,
+      'a disconnected phone must not be able to talk its way back in',
+    );
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('standby clears the no-offer watchdog rather than leaving it to fire', async () => {
+  // Otherwise stopping the camera before the desktop had offered would log a spurious "NO OFFER"
+  // complaint about a phone that had simply been switched off.
+  const h = await watchdogHarness();
+  try {
+    const phone = claimed(h.service);
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'ready', hasAudio: false }), 200);
+    assert.equal(await h.post(phone.id, phone.token, { kind: 'standby', reason: 'stopped' }), 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(
+      h.logs.some((line) => line.includes('NO OFFER')),
+      false,
+      'a deliberately stopped camera is not a missing offer',
+    );
+  } finally {
+    await h.cleanup();
+  }
+});

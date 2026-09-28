@@ -331,7 +331,16 @@ export function createWirelessReceiver(events: ReceiverEvents): WirelessReceiver
         return;
       }
 
-      if (message.kind === 'bye') {
+      /*
+       * Both end this peer connection, and for the same reason: there is no more video coming, and a
+       * frozen last frame on a projector is worse than black.
+       *
+       * They differ only in what happens next — after `standby` the phone can send a fresh `ready` and
+       * a new connection is built here, whereas after `bye` its credentials are gone. That difference
+       * is the main process's business, not this module's.
+       */
+      if (message.kind === 'bye' || message.kind === 'standby') {
+        log(sessionId, `closing on ${message.kind}`);
         this.close(sessionId);
       }
     },
