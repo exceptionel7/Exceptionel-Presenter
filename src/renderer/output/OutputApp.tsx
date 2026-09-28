@@ -79,6 +79,8 @@ export function OutputApp(): JSX.Element {
       lines={cue?.lines ?? []}
       visibility={visibility}
       cameraStream={wireless.liveStream}
+      // The scripture reference for THIS slide. Absent on lyric cues, which need none.
+      {...(cue?.caption === undefined ? {} : { caption: cue.caption })}
       {...(cue ? { transitionKey: cue.id } : {})}
       // `annotate` is deliberately absent. The congregation must never be shown a diagnostic.
     />

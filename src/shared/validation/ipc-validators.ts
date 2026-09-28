@@ -137,6 +137,27 @@ const vCue = vObject({
    */
   lines: vArray(vString({ max: 2_000 }), { max: 200 }),
   themeId: vNullable(vId()),
+  caption: vOptional(vString({ max: 300 })),
+  /*
+   * Structured scripture identity, bounded field by field.
+   *
+   * Validated as a whole object rather than accepted as opaque, because it crosses to the audience
+   * window and drives what is captioned on a projector. `vUnknown()` here would mean a malformed
+   * citation could reach the screen.
+   */
+  scripture: vOptional(
+    vObject({
+      translationId: vId(),
+      translationAbbreviation: vString({ min: 1, max: 16 }),
+      bookNumber: vInt({ min: 1, max: 66 }),
+      bookName: vString({ min: 1, max: 80 }),
+      chapter: vInt({ min: 1, max: 150 }),
+      startVerse: vInt({ min: 1, max: 176 }),
+      endVerse: vInt({ min: 1, max: 176 }),
+      reference: vString({ min: 1, max: 120 }),
+      copyrightNotice: vNullable(vString({ max: 2_000 })),
+    }),
+  ),
   notes: vOptional(vString({ max: 10_000 })),
 });
 
@@ -231,6 +252,20 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
     translationId: vId(),
     reference: vString({ min: 1, max: 200 }),
   }),
+  'bible:books': vObject({ translationId: vId() }),
+  'bible:chapters': vObject({
+    translationId: vId(),
+    // 1–66: the canonical range. Anything else is a programming error, not a typo.
+    bookNumber: vInt({ min: 1, max: 66 }),
+  }),
+  'bible:search': vObject({
+    translationId: vId(),
+    query: vString({ min: 1, max: 200 }),
+    limit: vOptional(vInt({ min: 1, max: 200 })),
+  }),
+  // No payload: main owns the file dialog, so no path ever crosses from the renderer.
+  'bible:import': vVoid(),
+  'bible:removeTranslation': vObject({ id: vId() }),
 
   'announcements:list': vVoid(),
   'announcements:save': vObject({

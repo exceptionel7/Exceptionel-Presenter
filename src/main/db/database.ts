@@ -22,6 +22,7 @@ import { createSongRepository, type SongRepository } from './repositories/songs.
 import { createServiceRepository, type ServiceRepository } from './repositories/services.ts';
 import { createThemeRepository, type ThemeRepository } from './repositories/themes.ts';
 import { createRecoveryRepository, type RecoveryRepository } from './repositories/recovery.ts';
+import { createBibleRepository, type BibleRepository } from './repositories/bible.ts';
 import { createIdentityRepository, type IdentityRepository } from './repositories/identity.ts';
 
 export interface AppDatabase {
@@ -39,6 +40,13 @@ export interface AppDatabase {
   readonly services: ServiceRepository;
   readonly themes: ThemeRepository;
   readonly recovery: RecoveryRepository;
+  /**
+   * Installed Bible translations.
+   *
+   * No scripture ships with the application; a translation is installed from a package whose licence
+   * the operator supplies. Deliberately NOT part of the synced library — see the note in bible.ts.
+   */
+  readonly bible: BibleRepository;
 
   /** Runs a unit of work across repositories atomically. */
   transaction<T>(fn: () => T): T;
@@ -79,6 +87,7 @@ export function openDatabase(options: OpenDatabaseOptions): AppDatabase {
     services: createServiceRepository(driver, identity),
     themes: createThemeRepository(driver, identity),
     recovery: createRecoveryRepository(driver),
+    bible: createBibleRepository(driver),
 
     transaction: (fn) => driver.transaction(fn),
     close: () => driver.close(),

@@ -92,6 +92,7 @@ declare module 'electron' {
   export const dialog: {
     showMessageBox(options: Record<string, unknown>): Promise<{ response: number }>;
     showErrorBox(title: string, content: string): void;
+    showOpenDialog(options: Record<string, unknown>): Promise<{ canceled: boolean; filePaths: string[] }>;
   };
 
   export const shell: {

@@ -19,6 +19,7 @@ import type { AppDatabase } from '../db/database.ts';
 import type { HandlerRegistry } from './dispatcher.ts';
 import type { LiveStateService } from '../services/live-state-service.ts';
 import { openService } from '../services/service-opener.ts';
+import type { BibleService } from '../services/bible-service.ts';
 import type { WirelessCameraService } from '../services/wireless-camera-service.ts';
 import type { CameraSource } from '../../shared/domain/camera.ts';
 import { parseSignalMessage } from '../../shared/domain/signaling.ts';
@@ -30,6 +31,8 @@ export interface HandlerContext {
   quit: () => void;
   /** Absent until the Wireless Camera service is constructed (it needs the app data path). */
   wireless?: WirelessCameraService;
+  /** Absent only in tests that do not exercise scripture. */
+  bible?: BibleService;
   /** Relays loopback signalling between the output and operator renderers. */
   relay?: (to: 'operator' | 'output', message: unknown) => void;
   /** Ensures the output renderer that owns phone peer connections exists. */
@@ -118,6 +121,36 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       db.themes.delete((payload as { id: string }).id);
     },
 
+    // ── bible (Section 8) ────────────────────────────────────────────────────────
+    /*
+     * NO SCRIPTURE SHIPS WITH THIS APPLICATION. Translations install from a package whose licence the
+     * operator supplies; the validator refuses one that states no terms. See docs/BIBLE.md.
+     */
+    'bible:translations': () => requireBible(context).translations(),
+    'bible:books': (payload) => requireBible(context).books((payload as { translationId: string }).translationId),
+    'bible:chapters': (payload) => {
+      const { translationId, bookNumber } = payload as { translationId: string; bookNumber: number };
+      return requireBible(context).chapters(translationId, bookNumber);
+    },
+    'bible:lookup': (payload) => {
+      const { translationId, reference } = payload as { translationId: string; reference: string };
+      // Returns a discriminated result, NOT a thrown failure: "this translation has no Romans" is an
+      // answer the interface can act on, and each cause has its own remedy.
+      return requireBible(context).lookup(translationId, reference);
+    },
+    'bible:search': (payload) => {
+      const { translationId, query, limit } = payload as {
+        translationId: string;
+        query: string;
+        limit?: number;
+      };
+      return requireBible(context).search(translationId, query, limit);
+    },
+    'bible:import': () => requireBible(context).importTranslation(),
+    'bible:removeTranslation': (payload) => {
+      requireBible(context).removeTranslation((payload as { id: string }).id);
+    },
+
     // ── live control (Sections 19-21) ────────────────────────────────────────────
     'live:getState': () => live.getState(),
     'live:intent': (payload) => live.apply(payload as LiveIntent),
@@ -130,7 +163,8 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
      * back". The operator window would then be the author of live state, which it is not, and any
      * bug in its expansion would put a cue list on the projector that disagreed with the database.
      */
-    'services:open': (payload) => openService(db, live, (payload as { serviceId: string }).serviceId),
+    'services:open': (payload) =>
+      openService(db, live, (payload as { serviceId: string }).serviceId, context.bible),
 
     // ── crash recovery (Section 33) ──────────────────────────────────────────────
     'recovery:check': () => db.recovery.findRecoverable(),
@@ -147,7 +181,7 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
        * moment recovery matters is mid-service, which is the worst possible time to discover that
        * the recovered cue list is not the one you had.
        */
-      const opened = snapshot.serviceId ? openService(db, live, snapshot.serviceId) : null;
+      const opened = snapshot.serviceId ? openService(db, live, snapshot.serviceId, context.bible) : null;
       db.recovery.discard(id);
       return opened?.service ?? null;
     },
@@ -164,15 +198,6 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
     'media:import': () =>
       notImplemented('Media import', 'Phase 5', 'Requires the main-process file dialog and content hashing.'),
     'media:delete': () => notImplemented('Media deletion', 'Phase 5', 'Requires the media library.'),
-
-    'bible:translations': () =>
-      notImplemented(
-        'Bible translations',
-        'Phase 4',
-        'Requires the translation package importer. No scripture text is bundled — translations must be installed from a properly licensed or public-domain source.',
-      ),
-    'bible:lookup': () =>
-      notImplemented('Scripture lookup', 'Phase 4', 'Requires at least one installed Bible translation.'),
 
     'announcements:list': () =>
       notImplemented('Announcements', 'Phase 5', 'Requires the announcement editor and media library.'),
@@ -321,6 +346,23 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       context.relay?.(to, message);
     },
   };
+}
+
+/**
+ * The Bible service, or an honest failure.
+ *
+ * Mirrors `requireWireless`: a channel whose service was never constructed must say so specifically
+ * rather than producing a generic "unknown channel", which reads like a crash.
+ */
+function requireBible(context: HandlerContext): BibleService {
+  if (!context.bible) {
+    notImplemented(
+      'The Bible module',
+      'Phase 4',
+      'The scripture service did not start. Restart Exceptionel Presenter.',
+    );
+  }
+  return context.bible;
 }
 
 function requireWireless(context: HandlerContext): WirelessCameraService {

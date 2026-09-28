@@ -11,9 +11,11 @@
  * congregation sees nothing.
  */
 
-import type { Service, ServiceItem, ServiceItemKind, Song } from './entities.ts';
+import type { Service, ServiceItem, ServiceItemKind, Song, ThemeSpec } from './entities.ts';
 import type { Cue } from './live-state.ts';
+import { packPassageIntoSlides, slideReference, type ScripturePassage } from './scripture.ts';
 import { songToSlides } from './song.ts';
+import { BASE_THEME_SPEC } from './theme.ts';
 
 /**
  * Which theme each kind of cue renders with.
@@ -41,7 +43,9 @@ export const NO_THEMES: CueThemes = Object.freeze({
 export type SkipReason =
   | { code: 'not-implemented'; phase: string; detail: string }
   | { code: 'missing-song'; phase: null; detail: string }
-  | { code: 'empty-song'; phase: null; detail: string };
+  | { code: 'empty-song'; phase: null; detail: string }
+  /** A scripture item whose passage could not be resolved: bad reference, or translation removed. */
+  | { code: 'scripture-unavailable'; phase: null; detail: string };
 
 export interface SkippedItem {
   itemId: string;
@@ -80,6 +84,22 @@ export function buildCues(input: {
   service: Pick<Service, 'themeId' | 'items'>;
   songs: readonly Song[];
   themes?: CueThemes;
+  /**
+   * Resolved scripture passages, keyed by SERVICE ITEM id.
+   *
+   * Handed in rather than looked up, because this function is pure and a passage lives in SQLite.
+   * `service-opener.ts` resolves them before calling; an item with no entry here is reported as
+   * unavailable rather than silently dropped.
+   */
+  passages?: ReadonlyMap<string, ScripturePassage>;
+  /**
+   * Resolves a theme id to its full spec, so scripture can be split at verse boundaries using the real
+   * type size rather than a guess.
+   *
+   * Optional: without it the base spec is used, which is the right default for tests and for a caller
+   * that has no theme data to hand.
+   */
+  resolveSpec?: (themeId: string | null) => ThemeSpec;
 }): BuiltCues {
   const themes = input.themes ?? NO_THEMES;
   const songsById = new Map(input.songs.map((song) => [song.id, song]));
@@ -177,14 +197,69 @@ export function buildCues(input: {
         });
         continue;
 
-      case 'scripture':
-        skip(item, {
-          code: 'not-implemented',
-          phase: 'Phase 4',
-          detail:
-            'Scripture needs the Bible module: reference parsing and an installed translation. No scripture text is bundled.',
+      case 'scripture': {
+        /*
+         * Resolved by the caller and handed in, because this function is pure and a passage lives in
+         * SQLite. `service-opener.ts` does the lookup; see the note on `passages` below.
+         */
+        const passage = input.passages?.get(item.id);
+
+        if (!passage) {
+          skip(item, {
+            code: 'scripture-unavailable',
+            phase: null,
+            detail:
+              'This passage could not be found. Check the reference, and that its translation is still installed.',
+          });
+          continue;
+        }
+
+        const themeId = serviceTheme ?? themes.scripture ?? themes.default;
+
+        /*
+         * Split at VERSE boundaries by the same geometry that sizes lyrics — `packPassageIntoSlides`
+         * calls the tested `fitSlideText`. Not a guessed verses-per-slide constant, and not a second
+         * layout implementation.
+         */
+        const slides = packPassageIntoSlides(passage, input.resolveSpec?.(themeId) ?? BASE_THEME_SPEC);
+
+        if (slides.length === 0) {
+          skip(item, {
+            code: 'scripture-unavailable',
+            phase: null,
+            detail: `${passage.reference} resolved to no verses.`,
+          });
+          continue;
+        }
+
+        slides.forEach((slide, index) => {
+          cues.push({
+            id: cueId(item.id, index),
+            kind: 'scripture',
+            itemId: item.id,
+            label: `${passage.reference} (${passage.translationAbbreviation})`,
+            lines: slide.lines,
+            themeId,
+            // The reference for THIS slide, not the whole passage: a caption must describe what is
+            // actually on screen.
+            caption: `${slideReference(passage, slide)} (${passage.translationAbbreviation})`,
+            scripture: {
+              translationId: passage.translationId,
+              translationAbbreviation: passage.translationAbbreviation,
+              bookNumber: passage.bookNumber,
+              bookName: passage.bookName,
+              chapter: passage.chapter,
+              // Narrowed to this slide, so the structured data and the caption agree.
+              startVerse: slide.startVerse,
+              endVerse: slide.endVerse,
+              reference: slideReference(passage, slide),
+              copyrightNotice: passage.copyrightNotice,
+            },
+            ...notesOf(item),
+          });
         });
         continue;
+      }
 
       case 'image':
       case 'video':

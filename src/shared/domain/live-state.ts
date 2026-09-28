@@ -8,6 +8,7 @@
  * and shell-independent. See docs/ARCHITECTURE.md §1.
  */
 
+import type { ScriptureCitation } from './scripture.ts';
 import { DEFAULT_THEME_ID } from './theme.ts';
 
 export type LiveStatus = 'idle' | 'live' | 'black' | 'clear' | 'paused';
@@ -44,6 +45,25 @@ export interface Cue {
    * theme ids for exactly that reason. Null means "use the service or application default".
    */
   themeId: string | null;
+  /**
+   * A caption shown beneath the text, describing what is on screen.
+   *
+   * For scripture this is the reference — and specifically the reference for THIS SLIDE, so a passage
+   * spread over three slides captions each one with the verses it actually shows. A caption naming
+   * verses the congregation cannot see is worse than none.
+   */
+  caption?: string;
+  /**
+   * Structured scripture identity, present on `kind: 'scripture'` cues.
+   *
+   * Deliberately not flattened into the text: the confidence monitor wants the reference, an operator
+   * wants to know which translation is on screen, and attribution needs the licence. All of that would
+   * otherwise have to be re-parsed out of a display string.
+   */
+  scripture?: ScriptureCitation & {
+    /** Verbatim licence of the translation, for attribution. */
+    copyrightNotice: string | null;
+  };
   /** Speaker notes — confidence monitor only, never the audience screen. */
   notes?: string;
 }

@@ -153,17 +153,16 @@ test('UNBUILT FEATURES PRODUCE NO CUE AND NAME THEIR PHASE', () => {
    */
   const built = buildCues({
     service: service([
-      item({ kind: 'scripture', label: 'John 3:16', sortOrder: 0 }),
-      item({ kind: 'image', label: 'Sermon Slide', sortOrder: 1 }),
-      item({ kind: 'video', label: 'Bumper', sortOrder: 2 }),
-      item({ kind: 'announcement', label: 'Youth Night', sortOrder: 3 }),
-      item({ kind: 'slide', label: 'Custom', sortOrder: 4 }),
+      item({ kind: 'image', label: 'Sermon Slide', sortOrder: 0 }),
+      item({ kind: 'video', label: 'Bumper', sortOrder: 1 }),
+      item({ kind: 'announcement', label: 'Youth Night', sortOrder: 2 }),
+      item({ kind: 'slide', label: 'Custom', sortOrder: 3 }),
     ]),
     songs: [],
   });
 
   assert.equal(built.cues.length, 0, 'nothing presentable');
-  assert.equal(built.skipped.length, 5, 'but every one is accounted for');
+  assert.equal(built.skipped.length, 4, 'but every one is accounted for');
 
   for (const entry of built.skipped) {
     assert.equal(entry.reason.code, 'not-implemented');
@@ -173,9 +172,25 @@ test('UNBUILT FEATURES PRODUCE NO CUE AND NAME THEIR PHASE', () => {
   }
 
   const byKind = new Map(built.skipped.map((entry) => [entry.kind, entry.reason.phase]));
-  assert.equal(byKind.get('scripture'), 'Phase 4');
   assert.equal(byKind.get('image'), 'Phase 5');
   assert.equal(byKind.get('video'), 'Phase 5');
+  assert.equal(byKind.get('slide'), 'Phase 9');
+});
+
+test('scripture is no longer one of them — it is implemented', () => {
+  /*
+   * Phase 4 moved scripture out of the not-implemented set. What it fails with now is quite different:
+   * an unresolvable passage (a mistyped reference, or a translation the operator removed), which is a
+   * data problem the operator can fix rather than a missing feature they must wait for.
+   */
+  const built = buildCues({
+    service: service([item({ kind: 'scripture', label: 'John 3:16' })]),
+    songs: [],
+  });
+
+  assert.equal(built.skipped[0]?.reason.code, 'scripture-unavailable');
+  assert.equal(built.skipped[0]?.reason.phase, null, 'no phase: nothing is being waited for');
+  assert.match(built.skipped[0]?.reason.detail ?? '', /Check the reference/);
 });
 
 test('a song deleted after the service was built is reported, not guessed at', () => {

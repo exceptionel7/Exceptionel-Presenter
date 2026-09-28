@@ -136,7 +136,13 @@ test('ITEMS THAT CANNOT BE PRESENTED ARE REPORTED, NOT SILENTLY DROPPED', () => 
     assert.equal(opened.cues.length, 3, 'two lyric slides plus the camera scene');
     assert.equal(opened.skipped.length, 1);
     assert.equal(opened.skipped[0]?.label, 'John 3:16');
-    assert.equal(opened.skipped[0]?.reason.phase, 'Phase 4');
+    /*
+     * Since Phase 4 this is a DATA problem, not a missing feature: no Bible service was passed to
+     * `openService` here, so the passage could not be resolved. Scripture that does resolve is covered
+     * in tests/scripture-cues.test.ts.
+     */
+    assert.equal(opened.skipped[0]?.reason.code, 'scripture-unavailable');
+    assert.equal(opened.skipped[0]?.reason.phase, null);
   });
 });
 

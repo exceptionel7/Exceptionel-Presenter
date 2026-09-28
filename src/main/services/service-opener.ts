@@ -14,9 +14,12 @@
  */
 
 import { buildCues, type CueThemes, type SkippedItem } from '../../shared/domain/cues.ts';
+import type { ScripturePassage } from '../../shared/domain/scripture.ts';
+import { BASE_THEME_SPEC, DEFAULT_THEME_ID } from '../../shared/domain/theme.ts';
+import type { ThemeSpec } from '../../shared/domain/entities.ts';
+import type { BibleService } from './bible-service.ts';
 import type { Service, Song } from '../../shared/domain/entities.ts';
 import type { Cue } from '../../shared/domain/live-state.ts';
-import { DEFAULT_THEME_ID } from '../../shared/domain/theme.ts';
 import type { AppDatabase } from '../db/database.ts';
 import type { LiveStateService } from './live-state-service.ts';
 
@@ -59,6 +62,11 @@ export function openService(
   db: AppDatabase,
   live: LiveStateService,
   serviceId: string,
+  /**
+   * Optional so a caller with no scripture in play — and every existing test — needs no change.
+   * Without it, scripture items are reported as unavailable rather than crashing.
+   */
+  bible?: BibleService,
 ): OpenedService | null {
   const service = db.services.get(serviceId);
   if (!service) return null;
@@ -84,7 +92,49 @@ export function openService(
   }
 
   const themes = readCueThemes(db);
-  const built = buildCues({ service, songs, themes });
+
+  /*
+   * Scripture is resolved HERE, before cue building, because `buildCues` is pure and a passage lives in
+   * SQLite. Each item carries its own reference and translation in `config`, so two scripture readings
+   * in one service can come from different translations — which is ordinary in a bilingual church.
+   *
+   * A reference that no longer resolves — a mistyped edit, or a translation the operator removed — is
+   * left out of the map and `buildCues` reports it as unavailable. The service still opens.
+   */
+  const passages = new Map<string, ScripturePassage>();
+  if (bible) {
+    for (const item of service.items) {
+      if (item.kind !== 'scripture') continue;
+
+      const reference = typeof item.config['reference'] === 'string' ? item.config['reference'] : null;
+      if (reference === null) continue;
+
+      const translationId =
+        typeof item.config['translationId'] === 'string'
+          ? item.config['translationId']
+          : (db.bible.defaultTranslation()?.id ?? null);
+      if (translationId === null) continue;
+
+      const result = bible.lookup(translationId, reference);
+      if (result.found) passages.set(item.id, result.passage);
+    }
+  }
+
+  /*
+   * Theme specs are resolved once and cached, so splitting a long passage does not re-walk the theme
+   * inheritance chain for every verse it tests.
+   */
+  const specCache = new Map<string, ThemeSpec>();
+  const resolveSpec = (themeId: string | null): ThemeSpec => {
+    if (themeId === null) return BASE_THEME_SPEC;
+    const cached = specCache.get(themeId);
+    if (cached) return cached;
+    const resolved = db.themes.resolve(themeId) ?? BASE_THEME_SPEC;
+    specCache.set(themeId, resolved);
+    return resolved;
+  };
+
+  const built = buildCues({ service, songs, themes, passages, resolveSpec });
 
   live.setCues(built.cues);
 

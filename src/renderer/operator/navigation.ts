@@ -65,17 +65,10 @@ export const SECTIONS: readonly SectionDef[] = Object.freeze([
     label: 'Bible',
     glyph: '✝',
     group: 'library',
-    available: false,
+    available: true,
     phase: 'Phase 4',
     requirement:
-      'Scripture module with reference parsing and keyword search. No scripture text is bundled — translations install from properly licensed or public-domain packages.',
-    capabilities: [
-      'Reference parsing: "John 3:16", "Psalm 23:1-6", "Rom 8"',
-      'Single verse, verse range, multiple verses, whole passage',
-      'Keyword search across an installed translation',
-      'Translation management with recorded licence terms',
-      'Send a passage straight to the audience screen',
-    ],
+      'Scripture lookup, keyword search and translation management. No scripture text is bundled — translations install from properly licensed or public-domain packages, and a package must state its licence.',
   },
   {
     id: 'media',

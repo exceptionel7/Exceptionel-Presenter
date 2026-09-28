@@ -485,7 +485,7 @@ optimism.
 | 1 | Architecture (this doc) + skeleton | ✅ done |
 | 2 | Electron shell, React nav, DB + migrations, settings, dashboard | migrations/repos **VERIFIED HERE** via `node:test`; shell **needs local run** |
 | 3 | Presentation engine: slides, preview, live, black/clear, next/prev | cue expansion, theme resolution, text fitting **VERIFIED HERE**; rendering **needs local run** |
-| 4 | Songs + Bible: library, section→slide, reference parser, FTS search | **VERIFIED HERE** (pure logic + SQLite) |
+| 4 | Songs + Bible: library, section→slide, reference parser, FTS search | **VERIFIED HERE** (parser, packages, SQLite, FTS); file dialog + rendering **need local run**. See docs/BIBLE.md |
 | 5 | Media library: import, thumbnails, streaming playback | repo **VERIFIED HERE**; playback **needs local run** |
 | 6 | Camera: detect, preview, switch, + lyrics, + Scripture | provider registry **VERIFIED HERE**; capture **needs local run** |
 | 7 | Multi-display, output roles, confidence monitor | **needs local run** (real monitors) |

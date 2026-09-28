@@ -77,7 +77,16 @@ declare module 'node:fs' {
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function existsSync(path: string): boolean;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
+  /**
+   * Both overloads, matching Node.
+   *
+   * The shim previously declared only the encoding form, so reading a file as bytes — to check its size
+   * before decoding megabytes of it — failed the local gate while compiling fine on a real install. A
+   * shim that is narrower than the API it stands in for pushes people to write worse code to satisfy
+   * it, which is the opposite of what a typecheck is for.
+   */
   export function readFileSync(path: string, encoding: string): string;
+  export function readFileSync(path: string): Buffer;
   export function readdirSync(path: string): string[];
   export function writeFileSync(
     path: string,
@@ -198,7 +207,12 @@ declare module 'node:events' {
 declare const Buffer: {
   from(data: Uint8Array | string, encoding?: string): { toString(encoding: string): string };
 };
-type Buffer = { toString(encoding?: string): string };
+type Buffer = {
+  toString(encoding?: string): string;
+  /** Needed to check a file's size before decoding it. Buffer is a Uint8Array subclass. */
+  readonly byteLength: number;
+  readonly length: number;
+};
 
 declare module 'node:url' {
   export function fileURLToPath(url: string | URL): string;

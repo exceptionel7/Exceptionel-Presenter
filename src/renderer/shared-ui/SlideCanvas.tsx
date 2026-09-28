@@ -56,6 +56,15 @@ export interface SlideCanvasProps {
    */
   cameraStream?: MediaStream | null;
   /**
+   * A small line beneath the text: a scripture reference, a song's copyright line.
+   *
+   * Rendered INSIDE the text layer, not as a sixth layer of its own. So it inherits the theme's
+   * alignment and scrim, it is hidden by Clear along with the words it belongs to, and it animates with
+   * them rather than lagging a frame behind. A reference that outlived its verse would be worse than no
+   * reference at all.
+   */
+  caption?: string;
+  /**
    * Changing this restarts the text transition. Pass the cue id.
    *
    * Only the text layer animates, so advancing a lyric does not restart a background video or make
@@ -78,6 +87,7 @@ export function SlideCanvas({
   lines,
   visibility = ALL_VISIBLE,
   cameraStream = null,
+  caption,
   transitionKey,
   annotate = false,
   className,
@@ -87,7 +97,14 @@ export function SlideCanvas({
   const fit = useMemo(() => fitSlideText(lines, spec), [lines, spec]);
 
   const background = backgroundCss(spec);
-  const hasText = visibility.showText && lines.length > 0;
+  /*
+   * A caption alone is enough to show the text layer.
+   *
+   * Without this, a scripture cue whose verses failed to resolve would render a reference with nothing
+   * under it — but so would a legitimately captioned slide with no body, and the second case is the one
+   * that matters: the operator sees the reference and knows the layer is alive.
+   */
+  const hasText = visibility.showText && (lines.length > 0 || (caption ?? '') !== '');
 
   return (
     <div className={`relative grid place-items-center overflow-hidden bg-black ${className ?? ''}`}>
@@ -185,6 +202,15 @@ export function SlideCanvas({
                   {line === '' ? '\u00A0' : line}
                 </div>
               ))}
+
+              {/*
+                The caption: a scripture reference, sized relative to the body text so it stays
+                subordinate at every resolution and under auto-fit. Inside the same block, so the
+                theme's alignment and scrim apply and Clear hides it with the words it describes.
+              */}
+              {(caption ?? '') !== '' && (
+                <div style={captionStyle(spec, fit.fontSize)}>{caption}</div>
+              )}
             </div>
           </div>
         )}
@@ -254,6 +280,34 @@ function lineStyle(spec: ThemeSpec, fontSize: number): CSSProperties {
       : {}),
   } as CSSProperties;
 }
+
+/**
+ * The reference line beneath a passage.
+ *
+ * Derived from the FITTED body size, not the theme's declared size, so on a slide that auto-fit has
+ * shrunk the caption shrinks with it and the relationship between them holds. A fixed caption size would
+ * end up larger than the verses on a dense slide.
+ */
+function captionStyle(spec: ThemeSpec, bodyFontSize: number): CSSProperties {
+  const { text } = spec;
+  return {
+    fontFamily: text.fontFamily,
+    fontSize: cqh(bodyFontSize * CAPTION_SCALE),
+    // Lighter than the body: it is a citation, not part of the reading.
+    fontWeight: Math.max(text.fontWeight - 200, 300),
+    color: text.color,
+    textAlign: text.align,
+    opacity: 0.78,
+    letterSpacing: '0.06em',
+    marginTop: cqh(bodyFontSize * 0.45),
+    ...(text.shadow.enabled
+      ? { textShadow: `0 ${cqh(text.shadow.offsetY)} ${cqh(text.shadow.blur)} ${text.shadow.color}` }
+      : {}),
+  } as CSSProperties;
+}
+
+/** A caption is a little over half the body size: clearly secondary, still readable from the back. */
+const CAPTION_SCALE = 0.55;
 
 /** The scrim behind text, which is what makes lyrics legible over a camera feed. */
 function scrimStyle(spec: ThemeSpec): CSSProperties {

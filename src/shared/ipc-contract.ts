@@ -29,6 +29,7 @@ import type {
 } from './domain/entities.ts';
 import type { Cue, LiveIntent, LiveState } from './domain/live-state.ts';
 import type { SkippedItem } from './domain/cues.ts';
+import type { ScripturePassage } from './domain/scripture.ts';
 import type { ErrorNotice } from './domain/errors.ts';
 import type { CameraSource } from './domain/camera.ts';
 
@@ -87,7 +88,32 @@ export interface IpcRequestMap {
 
   // bible (Section 8) — Phase 4
   'bible:translations': { req: void; res: BibleTranslation[] };
-  'bible:lookup': { req: { translationId: string; reference: string }; res: ScriptureResult };
+  /**
+   * Resolves a typed reference against an installed translation.
+   *
+   * Returns a discriminated result rather than throwing, because "that translation does not include
+   * Romans" is an ANSWER, not an exception. Failures here are expected, actionable, and each has its
+   * own remedy — collapsing them into a red error banner would throw that information away.
+   */
+  'bible:lookup': { req: { translationId: string; reference: string }; res: ScriptureLookup };
+  /** Books present in a translation, with real chapter counts. */
+  'bible:books': { req: { translationId: string }; res: BibleBookSummary[] };
+  /**
+   * Verses per chapter, read from the installed text.
+   *
+   * So the operator's chapter and verse pickers offer only what exists. A hard-coded versification
+   * table would eventually disagree with some translation and offer a verse that comes back empty.
+   */
+  'bible:chapters': { req: { translationId: string; bookNumber: number }; res: number[] };
+  'bible:search': { req: { translationId: string; query: string; limit?: number }; res: BibleSearchHit[] };
+  /**
+   * Installs a translation package chosen through a main-process file dialog.
+   *
+   * No payload: the renderer never sees or supplies a filesystem path. Main opens the dialog, reads the
+   * file, validates it and installs it, which keeps path handling on the trusted side of the boundary.
+   */
+  'bible:import': { req: void; res: TranslationImportReport };
+  'bible:removeTranslation': { req: { id: string }; res: void };
 
   // announcements (Section 25)
   'announcements:list': { req: void; res: Announcement[] };
@@ -236,6 +262,11 @@ export const IPC_CHANNELS = Object.freeze([
   'media:delete',
   'bible:translations',
   'bible:lookup',
+  'bible:books',
+  'bible:chapters',
+  'bible:search',
+  'bible:import',
+  'bible:removeTranslation',
   'announcements:list',
   'announcements:save',
   'announcements:delete',
@@ -446,22 +477,54 @@ export interface CameraProfileDraft {
   config?: Record<string, unknown>;
 }
 
-export interface ScriptureVerse {
-  book: string;
+/*
+ * Re-exported from shared/domain/scripture.ts rather than declared here.
+ *
+ * The repository, the cue builder, every renderer and this contract all describe the same passage. A
+ * second declaration is a guarantee that the two eventually disagree — which is exactly what happened
+ * with the theme spec before it was consolidated.
+ */
+export type {
+  ScriptureCitation,
+  ScripturePassage,
+  ScriptureVerse,
+} from './domain/scripture.ts';
+
+export type ScriptureLookup =
+  | { found: true; passage: ScripturePassage }
+  | {
+      found: false;
+      /** Each cause has a different remedy, so each keeps its own code. */
+      code: 'bad-reference' | 'no-translation' | 'book-missing' | 'chapter-missing' | 'verses-missing';
+      message: string;
+      /** Candidate book names, when the reference was ambiguous rather than wrong. */
+      candidates?: string[];
+    };
+
+export interface BibleBookSummary {
   bookNumber: number;
+  name: string;
+  abbreviation: string;
+  chapterCount: number;
+}
+
+export interface BibleSearchHit {
+  translationId: string;
+  bookNumber: number;
+  bookName: string;
   chapter: number;
   verse: number;
   text: string;
+  /** A normalised reference, so a hit can be acted on without a second lookup. */
+  reference: string;
 }
 
-export interface ScriptureResult {
-  /** Canonical display form, e.g. "John 3:16-18". */
-  reference: string;
-  translationAbbreviation: string;
-  verses: ScriptureVerse[];
-  /** Attribution/licence line the theme may be required to display. */
-  copyrightNotice: string | null;
-}
+/** The outcome of an import attempt, detailed enough to fix a bad package. */
+export type TranslationImportReport =
+  | { outcome: 'installed'; translation: BibleTranslation; warnings: { path: string; message: string }[] }
+  /** The operator closed the file dialog. Not an error. */
+  | { outcome: 'cancelled' }
+  | { outcome: 'rejected'; problems: { path: string; message: string }[] };
 
 // ── wireless camera ─────────────────────────────────────────────────────────────
 

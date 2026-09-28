@@ -1,0 +1,142 @@
+{
+  "_comment": "STRUCTURAL SAMPLE ONLY. Contains NO scripture. Every 'verse' is placeholder prose that says so. It exists so the import path and the Bible workspace can be verified without publishing anyone's translation. Try: John 3:16, John 3, Psalm 23:1-6, Jude 3. See docs/BIBLE.md.",
+  "translation": {
+    "id": "sample",
+    "abbreviation": "SAMPLE",
+    "name": "Sample (not scripture)",
+    "language": "en",
+    "license": "Public domain - contains no scripture, only placeholder text for testing.",
+    "sourceUrl": null
+  },
+  "books": [
+    {
+      "number": 43,
+      "chapters": [
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 1, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 1, verse 2. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 1, verse 3. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 1, verse 4. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 1, verse 5. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 2, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 2, verse 2. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 2, verse 3. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 2. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 3. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 4. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 5. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 6. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 7. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 8. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 9. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 10. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 11. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 12. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 13. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 14. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 15. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 16. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 17. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 18. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 19. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 20. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 43, chapter 3, verse 21. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ]
+      ]
+    },
+    {
+      "number": 19,
+      "chapters": [
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 1, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 2, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 3, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 4, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 5, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 6, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 7, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 8, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 9, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 10, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 11, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 12, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 13, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 14, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 15, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 16, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 17, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 18, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 19, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 20, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 21, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 22, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ],
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 2. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 3. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 4. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 5. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 23, verse 6. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ]
+      ]
+    },
+    {
+      "number": 65,
+      "chapters": [
+        [
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 65, chapter 1, verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 65, chapter 1, verse 2. Replace this package with a real translation before using Exceptionel Presenter in a service.",
+          "SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 65, chapter 1, verse 3. Replace this package with a real translation before using Exceptionel Presenter in a service."
+        ]
+      ]
+    }
+  ]
+}

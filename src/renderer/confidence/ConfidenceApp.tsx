@@ -73,7 +73,12 @@ export function ConfidenceApp(): JSX.Element {
         ) : progress?.current ? (
           <>
             <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em] text-silver-600 mb-4">
-              {progress.current.label}
+              {/*
+                For scripture, the caption is the reference for THIS slide — which is what someone about
+                to read aloud needs, rather than the whole passage. Falls back to the cue label for
+                lyrics, where the section name ("Chorus") is the useful thing.
+              */}
+              {progress.current.caption ?? progress.current.label}
             </p>
             {progress.current.lines.length > 0 ? (
               <div className="text-center text-white font-semibold leading-tight text-4xl xl:text-5xl space-y-1">

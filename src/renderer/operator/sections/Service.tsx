@@ -206,6 +206,7 @@ export function ServiceSection(): JSX.Element {
                 spec={previewSpec}
                 lines={selectedCue.lines}
                 cameraStream={cameraStream}
+                {...(selectedCue.caption === undefined ? {} : { caption: selectedCue.caption })}
                 transitionKey={selectedCue.id}
                 // Operator surface, so honest annotations are welcome here.
                 annotate
@@ -229,6 +230,7 @@ export function ServiceSection(): JSX.Element {
                 // the projector rather than being approximated.
                 visibility={resolveAudienceVisibility(live)}
                 cameraStream={cameraStream}
+                {...(liveCue?.caption === undefined ? {} : { caption: liveCue.caption })}
                 {...(liveCue ? { transitionKey: liveCue.id } : {})}
                 annotate
                 className="w-full h-full"

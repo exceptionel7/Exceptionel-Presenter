@@ -176,6 +176,7 @@ test('EVERY DISABLED BUTTON SAYS WHY IT IS DISABLED', () => {
     'operator/sections/Service.tsx',
     'operator/sections/Settings.tsx',
     'operator/sections/Songs.tsx',
+    'operator/sections/Bible.tsx',
     'operator/sections/Themes.tsx',
     'operator/sections/Dashboard.tsx',
     'operator/sections/Help.tsx',
@@ -228,4 +229,84 @@ test('the required song title is visibly required, not just enforced', () => {
     false,
     'the field must not rely on a heading-styled placeholder to name itself',
   );
+});
+
+
+// ── scripture uses the existing engine, not a second one ────────────────────────
+
+const SCRIPTURE_DOMAIN = readFileSync(join(process.cwd(), 'src', 'shared', 'domain', 'scripture.ts'), 'utf8');
+
+test('SCRIPTURE PLUGS INTO THE EXISTING RENDERER, WITH NO SECOND PATH', () => {
+  /*
+   * The architectural rule for Phase 4. Scripture could have been given its own component — it has a
+   * caption, verse numbers and a licence line that lyrics do not — and that would have been the
+   * beginning of two renderers drifting apart. Instead it is the same `SlideCanvas` with one extra
+   * prop.
+   */
+  assert.equal(
+    /ScriptureCanvas|ScriptureSlide.*Element|function ScriptureView/.test(SERVICE_SECTION + OUTPUT_APP),
+    false,
+    'no separate scripture renderer may exist',
+  );
+
+  // The caption is a prop on the one canvas, not a layer of its own.
+  assert.match(SLIDE_CANVAS, /caption\?: string/);
+  assert.match(OUTPUT_APP, /caption: cue\.caption/, 'the audience output passes it through');
+  assert.match(SERVICE_SECTION, /caption: selectedCue\.caption/, 'and so does the operator preview');
+  assert.match(SERVICE_SECTION, /caption: liveCue\.caption/, 'and the live pane');
+});
+
+test('the caption lives INSIDE the text layer, so Clear hides it with its verses', () => {
+  /*
+   * A reference that outlived the verse it names would be worse than no reference: the congregation
+   * would be looking at a citation for text that is no longer on screen. Being inside the text block
+   * also means it inherits the theme's alignment and scrim and animates with the words.
+   */
+  const textLayer = SLIDE_CANVAS.slice(
+    SLIDE_CANVAS.indexOf('z3 TEXT'),
+    SLIDE_CANVAS.indexOf('z4 FOREGROUND'),
+  );
+  assert.ok(textLayer.length > 0, 'the text layer is identifiable');
+  assert.match(textLayer, /captionStyle/, 'the caption is rendered within the text layer');
+
+  // Gated by showText along with the body.
+  assert.match(SLIDE_CANVAS, /visibility\.showText && \(lines\.length > 0 \|\| \(caption \?\? ''\) !== ''\)/);
+});
+
+test('the caption is sized from the FITTED body size, not the theme size', () => {
+  // Otherwise a dense slide that auto-fit has shrunk would end up with a caption larger than its verses.
+  assert.match(SLIDE_CANVAS, /captionStyle\(spec, fit\.fontSize\)/);
+  assert.match(SLIDE_CANVAS, /bodyFontSize \* CAPTION_SCALE/);
+});
+
+test('VERSE PACKING REUSES THE TESTED FITTING FUNCTION', () => {
+  /*
+   * Scripture is split at verse boundaries by the same geometry that decides whether lyrics fit. A
+   * hard-coded verses-per-slide constant would disagree with the renderer the moment a theme changed
+   * its type size.
+   */
+  assert.match(SCRIPTURE_DOMAIN, /import \{ fitSlideText \}/);
+  assert.match(SCRIPTURE_DOMAIN, /fitSlideText\(linesFor\(candidate\), spec\)\.scale === 1/);
+});
+
+test('camera + scripture composes exactly as camera + lyrics does', () => {
+  // Both are text over the same z1 camera layer. If scripture needed special handling in the canvas,
+  // that would be evidence of a second path.
+  const cameraLayer = SLIDE_CANVAS.slice(
+    SLIDE_CANVAS.indexOf('z1 CAMERA'),
+    SLIDE_CANVAS.indexOf('z2 MEDIA'),
+  );
+  assert.equal(/scripture/i.test(cameraLayer), false, 'the camera layer knows nothing about scripture');
+
+  const canvasWithoutComments = SLIDE_CANVAS.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+  assert.equal(
+    /scripture/i.test(canvasWithoutComments),
+    false,
+    'the renderer has no scripture-specific branch at all — only a generic caption',
+  );
+});
+
+test('the confidence monitor prefers the slide reference over the cue label', () => {
+  // Someone about to read aloud needs "John 3:17", not "John 3:16-18 (SMP)".
+  assert.match(CONFIDENCE_APP, /current\.caption \?\? progress\.current\.label/);
 });

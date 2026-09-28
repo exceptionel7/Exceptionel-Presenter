@@ -21,6 +21,7 @@ import { installApplicationMenu } from './windows/menu.ts';
 import { createLiveStateService } from './services/live-state-service.ts';
 import { createAutosave } from './services/autosave.ts';
 import { createWirelessCameraService } from './services/wireless-camera-service.ts';
+import { createBibleService } from './services/bible-service.ts';
 import { createCameraSourceRegistry } from './services/camera-source-registry.ts';
 import { createHandlers } from './ipc/handlers.ts';
 import { registerIpc } from './ipc/register.ts';
@@ -218,6 +219,29 @@ async function bootstrap(): Promise<void> {
     onLog: (line) => console.log(line),
   });
 
+  /*
+   * The Bible service owns scripture lookup and the import path.
+   *
+   * The file dialog lives HERE rather than in the service so the service stays testable without
+   * Electron, and so no filesystem path is ever supplied by a renderer — main chooses the file, reads
+   * it, validates it and installs it, all on the trusted side of the boundary.
+   */
+  const bible = createBibleService({
+    db,
+    chooseFile: async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Install a Bible translation',
+        // Stated in the dialog itself, because this is the moment the operator is deciding what to
+        // install and the licence requirement should not be a surprise afterwards.
+        message: 'Choose a translation package (.json). The package must state its licence.',
+        properties: ['openFile'],
+        filters: [{ name: 'Bible translation package', extensions: ['json'] }],
+      });
+      return result.canceled || result.filePaths.length === 0 ? null : (result.filePaths[0] ?? null);
+    },
+    onLog: (line) => console.log(line),
+  });
+
   const teardownIpc = registerIpc({
     handlers: createHandlers({
       db,
@@ -225,6 +249,7 @@ async function bootstrap(): Promise<void> {
       appInfo,
       quit: () => app.quit(),
       wireless,
+      bible,
       ensureMediaHost: () => {
         windows.ensureMediaHost();
       },
