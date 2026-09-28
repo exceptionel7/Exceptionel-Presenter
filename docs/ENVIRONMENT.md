@@ -59,3 +59,36 @@ Every deliverable will be labelled with one of:
 - **TYPECHECKED ONLY** — compiles clean, not executed (no runtime available).
 - **UNVERIFIED — NEEDS LOCAL RUN** — requires Electron/hardware on your machine.
 - **NOT IMPLEMENTED** — stub that reports its own unavailability honestly.
+
+
+## What cannot be verified here, and what stands in for it
+
+Stated plainly because a milestone report that blurs these is worthless.
+
+| Check | Status in this environment | What is done instead |
+|---|---|---|
+| `node --test` | **runs** | the real suite, against real SQLite and a real TLS socket |
+| `npm run typecheck:local` | **runs** | `tools/local-typecheck/check.mjs`, both passes |
+| `npm run typecheck` | **cannot run** — needs `node_modules` | the local gate, which is narrower for the renderer |
+| `electron-vite build` | **cannot run** — no `node_modules`, no registry | nothing; must be run on a real machine |
+| Electron launch | **cannot run** — no Electron binary | nothing |
+| DevTools console | **cannot run** — no browser | renderer errors are forwarded to the terminal, so a real run surfaces them |
+| Rendered layout geometry | **cannot be measured** | `tests/operator-layout.test.ts` resolves the real width classes to pixels and bounds the arithmetic |
+| Phone camera, WebRTC | **cannot run** — no phone, no network | verified by the user on hardware |
+
+### The layout limitation specifically
+
+`tests/operator-layout.test.ts` does **not** measure a rendered layout. It extracts the width tokens
+actually present in the source, resolves them through Tailwind's scale, and asserts the
+non-shrinkable parts of the shell leave a usable work area at 1024, 1280 and 1920.
+
+That is a real constraint — the sum of fixed widths is not a matter of opinion — and it catches the
+class of regression that matters: someone widening a sidebar past what the narrowest supported
+viewport can hold. It cannot catch a long unbroken string pushing a flex item wide, so the test also
+asserts every fixed sidebar is paired with a `flex-1 min-w-0` work area, which is the structural
+property that makes such a string shrinkable.
+
+It matters more than it would elsewhere because `styles.css` sets `body { overflow: hidden }`. That is
+right for a kiosk-style application — a stray scrollbar during a service would be worse than none —
+but it means an overflowing shell fails **invisibly**, clipping a control rather than revealing it.
+The width arithmetic is the compensating control for that choice.

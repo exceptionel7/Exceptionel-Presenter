@@ -180,3 +180,58 @@ test('other kinds do not affect numbering', () => {
   assert.equal(nextSectionLabel('bridge', existing), 'Bridge');
   assert.equal(nextSectionLabel('chorus', existing), 'Chorus 2');
 });
+
+
+// ── non-ASCII lyrics survive intact ──────────────────────────────────────────────
+
+test('HAITIAN CREOLE LYRICS ARE NOT ALTERED ANYWHERE IN THE PIPELINE', () => {
+  /*
+   * Added because this application is in use with Haitian Creole lyrics, and several things in the
+   * codebase legitimately strip diacritics: `normaliseBookKey` folds them so "Génesis" matches Genesis,
+   * and the FTS index is configured with `remove_diacritics` so a search for "wayom" finds "wayòm".
+   *
+   * Both are correct for MATCHING. Neither may touch what reaches the projector. A lyric rendered as
+   * "Paske Ou se Bondye m" instead of the accented original would be wrong in front of the people who
+   * sing it, and it is exactly the kind of thing that survives unnoticed in an English-only test suite.
+   */
+  const verse = [
+    'Paske Ou se Bondye m',
+    'M ap di W mèsi',
+    'Paske w mete m nan wayòm Ou',
+    'Mwen dòmi, mwen leve',
+  ].join('\n');
+
+  const slides = splitSectionIntoSlides({
+    kind: 'verse',
+    label: 'Verse 1',
+    lyrics: verse,
+    slideBreakMode: 'whole-section',
+  });
+
+  assert.equal(slides.length, 1);
+  assert.deepEqual(slides[0]?.lines, [
+    'Paske Ou se Bondye m',
+    'M ap di W mèsi',
+    'Paske w mete m nan wayòm Ou',
+    'Mwen dòmi, mwen leve',
+  ]);
+
+  // Byte-for-byte, including the combining forms: nothing normalised, nothing stripped.
+  const joined = slides[0]?.lines.join('\n') ?? '';
+  assert.equal(joined, verse, 'the lyrics must round-trip exactly');
+  assert.ok(joined.includes('è'), 'è survived');
+  assert.ok(joined.includes('ò'), 'ò survived');
+});
+
+test('accented lyrics split on blank lines the same as ASCII ones', () => {
+  const slides = splitSectionIntoSlides({
+    kind: 'chorus',
+    label: 'Chorus',
+    lyrics: 'Mwen respire, m ap viv\nPou sante ou ban mwen\n\nM ap di W mèsi\nPaske Ou jistifye m',
+    slideBreakMode: 'blank-line',
+  });
+
+  assert.equal(slides.length, 2);
+  assert.deepEqual(slides[0]?.lines, ['Mwen respire, m ap viv', 'Pou sante ou ban mwen']);
+  assert.deepEqual(slides[1]?.lines, ['M ap di W mèsi', 'Paske Ou jistifye m']);
+});

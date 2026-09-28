@@ -192,7 +192,13 @@ export function ServiceSection(): JSX.Element {
   return (
     <div className="h-full flex min-h-0">
       {/* ── column 1: services and running order ─────────────────────────────── */}
-      <div className="w-[22rem] shrink-0 border-r border-ink-700 flex flex-col min-h-0">
+      {/*
+        Narrower below `xl`, because 22rem is 34% of a 1024-wide viewport for a read-only running
+        order — and it squeezes the preview and live panes, which are the reason the operator is on
+        this screen. Responsive rather than a flat reduction, so the desktop layout at 1920 is
+        unchanged.
+      */}
+      <div className="w-72 xl:w-[22rem] shrink-0 border-r border-ink-700 flex flex-col min-h-0">
         <ServicePicker
           services={services.data ?? []}
           openedId={opened?.service.id ?? null}
