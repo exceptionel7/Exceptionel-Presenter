@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { CameraSource } from '@shared/domain/camera.ts';
 import type { Service, ServiceItem, ServiceSummary, Theme } from '@shared/domain/entities.ts';
 import type { Cue, LiveIntent, LiveState } from '@shared/domain/live-state.ts';
 import { resolveAudienceVisibility, serviceProgress } from '@shared/domain/live-state.ts';
@@ -69,12 +70,54 @@ export function ServiceSection(): JSX.Element {
    * matters most.
    */
   const subscriber = useMemo(() => createLoopbackSubscriber(), []);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  /** Every published camera, keyed by source id. Which one is shown is decided below. */
+  const [cameraStreams, setCameraStreams] = useState<ReadonlyMap<string, MediaStream>>(new Map());
+  const [liveCameraId, setLiveCameraId] = useState<string | null>(null);
 
   useIpcEvent('media:relay', ({ message }) => subscriber.handleRelay(message));
 
+  /*
+   * Which camera is actually on air.
+   *
+   * The subscriber receives EVERY paired camera's stream, so painting whichever arrived first would put
+   * a camera in the LIVE pane that the congregation is not seeing — the preview lying about the one
+   * thing it exists to be trusted on. Only the source the operator promoted is used, which is the same
+   * rule the audience output follows.
+   */
+  useIpcEvent('camera:sources', (sources: CameraSource[]) => {
+    const live = sources.find((source) => source.assignment === 'live' && source.isWireless);
+    setLiveCameraId(live?.id ?? null);
+  });
+
   useEffect(() => {
-    const unsubscribe = subscriber.onStream((_id, stream) => setCameraStream(stream));
+    // The assignment may predate this section being opened, so it is fetched as well as listened for.
+    void client.invoke('camera:sources').then((result) => {
+      if (!result.ok) return;
+      const live = result.data.find((source) => source.assignment === 'live' && source.isWireless);
+      setLiveCameraId(live?.id ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscriber.onStream((id, stream) => {
+      setCameraStreams((current) => {
+        const next = new Map(current);
+        if (stream) next.set(id, stream);
+        else next.delete(id);
+        return next;
+      });
+    });
+
+    /*
+     * Asked for on mount, not merely waited for.
+     *
+     * The output window offers a loopback stream when the phone's track arrives. If the operator paired
+     * the camera on the Camera screen and then came here, that moment has passed — so this pane would
+     * show "NO CAMERA SIGNAL" over the lyrics while the congregation was seeing the camera perfectly
+     * well. Requesting a republish is what makes the preview honest whenever it is opened.
+     */
+    subscriber.requestStreams();
+
     return () => {
       unsubscribe();
       subscriber.closeAll();
@@ -111,6 +154,11 @@ export function ServiceSection(): JSX.Element {
   const progress = live ? serviceProgress(live, cues) : null;
   const liveCue = progress?.current ?? null;
   const selectedCue = cues.find((cue) => cue.id === selectedCueId) ?? null;
+
+  /*
+   * Only the camera the operator put live. Null when none is, so both panes agree with the audience.
+   */
+  const cameraStream = liveCameraId === null ? null : (cameraStreams.get(liveCameraId) ?? null);
 
   const liveSpec = resolveThemeSpecOrBase(themes, liveCue?.themeId ?? live?.themeId ?? null);
   const previewSpec = resolveThemeSpecOrBase(themes, selectedCue?.themeId ?? live?.themeId ?? null);

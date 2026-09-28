@@ -52,6 +52,16 @@ export function CameraSection(): JSX.Element {
         return next;
       });
     });
+
+    /*
+     * Asked for on mount, not merely waited for.
+     *
+     * The output window offers a loopback stream when the phone's track arrives — once. Coming back to
+     * this section after visiting another one would otherwise show no picture for a camera that is
+     * plainly live on the audience screen.
+     */
+    subscriber.requestStreams();
+
     return () => {
       unsubscribe();
       subscriber.closeAll();

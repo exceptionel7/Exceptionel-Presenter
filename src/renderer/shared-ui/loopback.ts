@@ -20,7 +20,19 @@ type RelayMessage =
   | { loopback: 'offer'; sdp: string; id: string }
   | { loopback: 'answer'; sdp: string; id: string }
   | { loopback: 'ice'; candidate: string; sdpMid: string | null; sdpMLineIndex: number | null; id: string }
-  | { loopback: 'end'; id: string };
+  | { loopback: 'end'; id: string }
+  /**
+   * Subscriber → publisher: "send me what you already have."
+   *
+   * THE FIX FOR A CAMERA THAT SHOWED IN ONE SECTION BUT NOT ANOTHER. A loopback offer used to be sent
+   * exactly once, at the moment the phone's track arrived. So whichever operator section happened to be
+   * mounted then got the picture, and any section opened afterwards got nothing — pair the camera on the
+   * Camera screen, walk over to Service, and the live pane read "NO CAMERA SIGNAL" while the audience
+   * output was showing the feed perfectly well.
+   *
+   * Carries no id: a subscriber that has just mounted does not know what exists yet.
+   */
+  | { loopback: 'request' };
 
 const isRelayMessage = (value: unknown): value is RelayMessage =>
   typeof value === 'object' && value !== null && typeof (value as { loopback?: unknown }).loopback === 'string';
@@ -37,6 +49,13 @@ export interface LoopbackPublisher {
 
 export function createLoopbackPublisher(): LoopbackPublisher {
   const connections = new Map<string, RTCPeerConnection>();
+  /*
+   * Every stream currently published, retained so a subscriber that mounts later can be served.
+   *
+   * The connection alone is not enough: republishing needs the original MediaStream to build a fresh
+   * offer from, and a closed RTCPeerConnection cannot give its tracks back.
+   */
+  const published = new Map<string, MediaStream>();
 
   const send = (message: RelayMessage): void => {
     void client.invoke('media:relay', { to: 'operator', message });
@@ -49,46 +68,69 @@ export function createLoopbackPublisher(): LoopbackPublisher {
     existing.close();
   };
 
+  /** Builds and sends one offer. Shared by `publish` and a subscriber's `request`. */
+  const offer = (id: string, stream: MediaStream): void => {
+    // Republishing replaces the previous connection outright. Reusing it would mean renegotiating
+    // mid-stream, and a fresh local connection costs almost nothing.
+    teardown(id);
+
+    const connection = new RTCPeerConnection({ iceServers: [] });
+    connections.set(id, connection);
+
+    for (const track of stream.getTracks()) connection.addTrack(track, stream);
+
+    connection.onicecandidate = (event) => {
+      if (!event.candidate) return;
+      send({
+        loopback: 'ice',
+        id,
+        candidate: event.candidate.candidate,
+        sdpMid: event.candidate.sdpMid,
+        sdpMLineIndex: event.candidate.sdpMLineIndex,
+      });
+    };
+
+    void connection
+      .createOffer()
+      .then((created) => connection.setLocalDescription(created).then(() => created))
+      .then((created) => send({ loopback: 'offer', id, sdp: created.sdp ?? '' }));
+  };
+
   return {
     publish(id, stream) {
-      // Republishing replaces the previous connection outright. Reusing it would mean
-      // renegotiating mid-stream, and a fresh local connection costs almost nothing.
-      teardown(id);
-
-      const connection = new RTCPeerConnection({ iceServers: [] });
-      connections.set(id, connection);
-
-      for (const track of stream.getTracks()) connection.addTrack(track, stream);
-
-      connection.onicecandidate = (event) => {
-        if (!event.candidate) return;
-        send({
-          loopback: 'ice',
-          id,
-          candidate: event.candidate.candidate,
-          sdpMid: event.candidate.sdpMid,
-          sdpMLineIndex: event.candidate.sdpMLineIndex,
-        });
-      };
-
-      void connection
-        .createOffer()
-        .then((offer) => connection.setLocalDescription(offer).then(() => offer))
-        .then((offer) => send({ loopback: 'offer', id, sdp: offer.sdp ?? '' }));
+      published.set(id, stream);
+      offer(id, stream);
     },
 
     unpublish(id) {
+      published.delete(id);
       teardown(id);
       send({ loopback: 'end', id });
     },
 
     handleRelay(message) {
       if (!isRelayMessage(message)) return;
+
+      /*
+       * Handled BEFORE the id lookup, because a request carries none — and because this is the whole
+       * point of it: an operator section that has just mounted gets everything currently published,
+       * rather than waiting for a track that arrived minutes ago to arrive again.
+       */
+      if (message.loopback === 'request') {
+        for (const [id, stream] of published) offer(id, stream);
+        return;
+      }
+
       const connection = connections.get(message.id);
       if (!connection) return;
 
       if (message.loopback === 'answer') {
-        void connection.setRemoteDescription({ type: 'answer', sdp: message.sdp });
+        void connection
+          .setRemoteDescription({ type: 'answer', sdp: message.sdp })
+          // A second answer for one offer lands here — two operator sections mounted at once would do
+          // it. Swallowed rather than left as an unhandled rejection, since the first answer already
+          // established the connection.
+          .catch(() => undefined);
         return;
       }
       if (message.loopback === 'ice' && message.candidate) {
@@ -104,6 +146,7 @@ export function createLoopbackPublisher(): LoopbackPublisher {
 
     closeAll() {
       for (const id of [...connections.keys()]) teardown(id);
+      published.clear();
     },
   };
 }
@@ -111,6 +154,14 @@ export function createLoopbackPublisher(): LoopbackPublisher {
 // ── subscriber: runs in the operator window ─────────────────────────────────────
 
 export interface LoopbackSubscriber {
+  /**
+   * Asks the publisher for everything it currently holds.
+   *
+   * MUST be called on mount. The publisher offers a stream when the phone's track arrives, which may
+   * have been minutes ago and in a different operator section — without this, a section opened later
+   * shows "no camera signal" while the audience output is displaying the feed perfectly well.
+   */
+  requestStreams(): void;
   handleRelay(message: unknown): void;
   streamFor(id: string): MediaStream | null;
   onStream(listener: (id: string, stream: MediaStream | null) => void): () => void;
@@ -138,6 +189,8 @@ export function createLoopbackSubscriber(): LoopbackSubscriber {
   };
 
   return {
+    requestStreams: () => send({ loopback: 'request' }),
+
     streamFor: (id) => streams.get(id) ?? null,
 
     onStream(listener) {
