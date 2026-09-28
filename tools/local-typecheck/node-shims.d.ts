@@ -88,6 +88,8 @@ declare module 'node:fs' {
   export function readFileSync(path: string, encoding: string): string;
   export function readFileSync(path: string): Buffer;
   export function readdirSync(path: string): string[];
+  /** Extends or shrinks a file. Used in tests to make a large SPARSE file cheaply. */
+  export function truncateSync(path: string, length: number): void;
   export function writeFileSync(
     path: string,
     data: string | Uint8Array,
@@ -263,6 +265,14 @@ type Buffer = {
 
 declare module 'node:url' {
   export function fileURLToPath(url: string | URL): string;
+  /**
+   * Percent-encodes a path into a `file:` URL.
+   *
+   * Required rather than string concatenation: a Windows path has backslashes and a drive letter, and
+   * a filename can contain spaces, `#` or `?` — all of which change the meaning of a URL if pasted in
+   * raw. Media filenames come from whatever the church was handed, so this is not a theoretical case.
+   */
+  export function pathToFileURL(path: string): URL;
 }
 
 declare const process: {

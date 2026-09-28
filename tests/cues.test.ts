@@ -153,16 +153,14 @@ test('UNBUILT FEATURES PRODUCE NO CUE AND NAME THEIR PHASE', () => {
    */
   const built = buildCues({
     service: service([
-      item({ kind: 'image', label: 'Sermon Slide', sortOrder: 0 }),
-      item({ kind: 'video', label: 'Bumper', sortOrder: 1 }),
-      item({ kind: 'announcement', label: 'Youth Night', sortOrder: 2 }),
-      item({ kind: 'slide', label: 'Custom', sortOrder: 3 }),
+      item({ kind: 'announcement', label: 'Youth Night', sortOrder: 0 }),
+      item({ kind: 'slide', label: 'Custom', sortOrder: 1 }),
     ]),
     songs: [],
   });
 
   assert.equal(built.cues.length, 0, 'nothing presentable');
-  assert.equal(built.skipped.length, 4, 'but every one is accounted for');
+  assert.equal(built.skipped.length, 2, 'but every one is accounted for');
 
   for (const entry of built.skipped) {
     assert.equal(entry.reason.code, 'not-implemented');
@@ -172,9 +170,132 @@ test('UNBUILT FEATURES PRODUCE NO CUE AND NAME THEIR PHASE', () => {
   }
 
   const byKind = new Map(built.skipped.map((entry) => [entry.kind, entry.reason.phase]));
-  assert.equal(byKind.get('image'), 'Phase 5');
-  assert.equal(byKind.get('video'), 'Phase 5');
+  assert.equal(byKind.get('announcement'), 'Phase 9');
   assert.equal(byKind.get('slide'), 'Phase 9');
+});
+
+// ── media items (Phase 5) ───────────────────────────────────────────────────────
+
+const mediaLibrary = new Map([
+  ['media_still', { kind: 'image' as const, filename: 'sunrise.jpg' }],
+  ['media_clip', { kind: 'video' as const, filename: 'worship-loop.mp4' }],
+]);
+
+test('image and video items are presentable now, and carry their asset', () => {
+  const built = buildCues({
+    service: service([
+      item({ kind: 'image', label: 'Sermon Slide', refId: 'media_still', sortOrder: 0 }),
+      item({ kind: 'video', label: 'Bumper', refId: 'media_clip', sortOrder: 1 }),
+    ]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  assert.equal(built.skipped.length, 0);
+  assert.equal(built.cues.length, 2);
+
+  const [still, clip] = built.cues;
+  assert.equal(still?.kind, 'image');
+  assert.deepEqual(still?.media, { assetId: 'media_still', kind: 'image', fit: 'cover' });
+  // No words: a media slide IS the picture, so the text layer has nothing to paint.
+  assert.deepEqual(still?.lines, []);
+  assert.equal(still?.label, 'Sermon Slide');
+
+  assert.equal(clip?.kind, 'video');
+  assert.equal(clip?.media?.kind, 'video');
+});
+
+test('a media cue carries an ID and never a path', () => {
+  const built = buildCues({
+    service: service([item({ kind: 'image', label: 'Sermon Slide', refId: 'media_still' })]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  // The audience window resolves this through the app-media: protocol, in main. A path on a cue would
+  // put the operator's home directory into a broadcast every window receives.
+  const serialised = JSON.stringify(built.cues);
+  assert.ok(!serialised.includes('/'), `no path-like value: ${serialised}`);
+  assert.ok(!/absPath|thumbnail|[A-Za-z]:\\/.test(serialised));
+});
+
+test('the ASSET decides whether it is an image or a video, not the item', () => {
+  /*
+   * They can disagree: an item saved as `image` whose asset was replaced, or a hand-edited running
+   * order. Trusting the item would build an <img> for an MP4 — a broken-image icon on the projector.
+   */
+  const built = buildCues({
+    service: service([item({ kind: 'image', label: 'Mislabelled', refId: 'media_clip' })]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  assert.equal(built.cues[0]?.kind, 'video');
+  assert.equal(built.cues[0]?.media?.kind, 'video');
+});
+
+test('an item with no file chosen is reported as fixable, not as unbuilt', () => {
+  const built = buildCues({
+    service: service([item({ kind: 'image', label: 'Empty', refId: null })]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  assert.equal(built.cues.length, 0);
+  // `missing-media`, NOT `not-implemented`: media works, and this is something the operator can fix
+  // now rather than something they must wait for a release to get.
+  assert.equal(built.skipped[0]?.reason.code, 'missing-media');
+  assert.equal(built.skipped[0]?.reason.phase, null);
+  assert.match(built.skipped[0]?.reason.detail ?? '', /media library/);
+});
+
+test('an asset deleted after the service was built is reported before Sunday', () => {
+  const built = buildCues({
+    service: service([item({ kind: 'video', label: 'Bumper', refId: 'media_vanished' })]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  assert.equal(built.cues.length, 0);
+  assert.equal(built.skipped[0]?.reason.code, 'missing-media');
+  assert.match(built.skipped[0]?.reason.detail ?? '', /no longer in your media library/);
+});
+
+test('a media item falls back to the asset filename when it has no label', () => {
+  const built = buildCues({
+    service: service([item({ kind: 'image', label: '', refId: 'media_still' })]),
+    songs: [],
+    media: mediaLibrary,
+  });
+  // An unlabelled row in the running order is unusable; the filename is what the operator recognises.
+  assert.equal(built.cues[0]?.label, 'sunrise.jpg');
+});
+
+test('letterboxing is opt-in per item', () => {
+  const built = buildCues({
+    service: service([
+      item({ kind: 'image', label: 'Diagram', refId: 'media_still', config: { fit: 'contain' }, sortOrder: 0 }),
+      item({ kind: 'image', label: 'Photo', refId: 'media_clip', config: { fit: 'nonsense' }, sortOrder: 1 }),
+    ]),
+    songs: [],
+    media: mediaLibrary,
+  });
+
+  // `contain` for a diagram whose edges carry words; `cover` for everything else, including when the
+  // stored value is not one we recognise.
+  assert.equal(built.cues[0]?.media?.fit, 'contain');
+  assert.equal(built.cues[1]?.media?.fit, 'cover');
+});
+
+test('without a media library, a media item is reported rather than crashing', () => {
+  // The `media` input is optional, so a caller that has no library to hand (a test, or a code path
+  // that predates Phase 5) must degrade to an explanation.
+  const built = buildCues({
+    service: service([item({ kind: 'image', label: 'Sermon Slide', refId: 'media_still' })]),
+    songs: [],
+  });
+  assert.equal(built.cues.length, 0);
+  assert.equal(built.skipped[0]?.reason.code, 'missing-media');
 });
 
 test('scripture is no longer one of them — it is implemented', () => {

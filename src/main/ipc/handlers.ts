@@ -12,7 +12,14 @@
  */
 
 import { failure } from '../../shared/domain/errors.ts';
-import type { AppInfo, ChurchProfileDraft, ServiceDraft, SongDraft, ThemeDraft } from '../../shared/ipc-contract.ts';
+import type {
+  AppInfo,
+  ChurchProfileDraft,
+  MediaQuery,
+  ServiceDraft,
+  SongDraft,
+  ThemeDraft,
+} from '../../shared/ipc-contract.ts';
 import type { ShortcutBinding, SongQuery } from '../../shared/domain/entities.ts';
 import type { Cue, LiveIntent } from '../../shared/domain/live-state.ts';
 import type { AppDatabase } from '../db/database.ts';
@@ -20,6 +27,7 @@ import type { HandlerRegistry } from './dispatcher.ts';
 import type { LiveStateService } from '../services/live-state-service.ts';
 import { openService } from '../services/service-opener.ts';
 import type { BibleService } from '../services/bible-service.ts';
+import type { MediaService } from '../services/media-service.ts';
 import type { WirelessCameraService } from '../services/wireless-camera-service.ts';
 import type { CameraSource } from '../../shared/domain/camera.ts';
 import { parseSignalMessage } from '../../shared/domain/signaling.ts';
@@ -33,6 +41,8 @@ export interface HandlerContext {
   wireless?: WirelessCameraService;
   /** Absent only in tests that do not exercise scripture. */
   bible?: BibleService;
+  /** The media library. Absent only in tests that do not exercise it. */
+  media?: MediaService;
   /** Relays loopback signalling between the output and operator renderers. */
   relay?: (to: 'operator' | 'output', message: unknown) => void;
   /** Ensures the output renderer that owns phone peer connections exists. */
@@ -121,6 +131,25 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
       db.themes.delete((payload as { id: string }).id);
     },
 
+    // ── media (Section 13) ───────────────────────────────────────────────────────
+    /*
+     * Every response goes through the service's view mapping, so `absPath` cannot reach a renderer.
+     * Import takes no payload: main opens the dialog, so the only importable file is one a human
+     * chose. See docs/ARCHITECTURE.md §4.
+     */
+    'media:list': (payload) => requireMedia(context).list(payload as MediaQuery),
+    'media:import': () => requireMedia(context).import(),
+    'media:delete': (payload) => requireMedia(context).remove((payload as { id: string }).id),
+    'media:setFavorite': (payload) => {
+      const { id, isFavorite } = payload as { id: string; isFavorite: boolean };
+      requireMedia(context).setFavorite(id, isFavorite);
+    },
+    'media:setCategory': (payload) => {
+      const { id, category } = payload as { id: string; category: string | null };
+      requireMedia(context).setCategory(id, category);
+    },
+    'media:categories': () => requireMedia(context).categories(),
+
     // ── bible (Section 8) ────────────────────────────────────────────────────────
     /*
      * NO SCRIPTURE SHIPS WITH THIS APPLICATION. Translations install from a package whose licence the
@@ -192,12 +221,6 @@ export function createHandlers(context: HandlerContext): HandlerRegistry {
     // ── NOT IMPLEMENTED — later phases ───────────────────────────────────────────
     // These exist so the UI receives an honest, specific explanation instead of a
     // generic "unknown channel" that looks like a crash.
-
-    'media:list': () =>
-      notImplemented('The media library', 'Phase 5', 'Requires the media import pipeline and thumbnail generation.'),
-    'media:import': () =>
-      notImplemented('Media import', 'Phase 5', 'Requires the main-process file dialog and content hashing.'),
-    'media:delete': () => notImplemented('Media deletion', 'Phase 5', 'Requires the media library.'),
 
     'announcements:list': () =>
       notImplemented('Announcements', 'Phase 5', 'Requires the announcement editor and media library.'),
@@ -363,6 +386,17 @@ function requireBible(context: HandlerContext): BibleService {
     );
   }
   return context.bible;
+}
+
+function requireMedia(context: HandlerContext): MediaService {
+  if (!context.media) {
+    notImplemented(
+      'The media library',
+      'Phase 5',
+      'The media service did not start. Restart Exceptionel Presenter.',
+    );
+  }
+  return context.media;
 }
 
 function requireWireless(context: HandlerContext): WirelessCameraService {

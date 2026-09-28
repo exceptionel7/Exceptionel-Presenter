@@ -54,6 +54,14 @@ export interface Cue {
    */
   caption?: string;
   /**
+   * The imported image or video this cue IS, present on `kind: 'image'` and `kind: 'video'` cues.
+   *
+   * Carried on the cue for the same reason `lines` is: the audience window may not read the library,
+   * so one broadcast has to be one complete truth. An asset ID is all it needs — the `app-media:`
+   * protocol turns that into a file, in main, where the library lives.
+   */
+  media?: { assetId: string; kind: 'image' | 'video'; fit: 'cover' | 'contain' };
+  /**
    * Structured scripture identity, present on `kind: 'scripture'` cues.
    *
    * Deliberately not flattened into the text: the confidence monitor wants the reference, an operator

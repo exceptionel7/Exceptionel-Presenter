@@ -139,6 +139,17 @@ const vCue = vObject({
   themeId: vNullable(vId()),
   caption: vOptional(vString({ max: 300 })),
   /*
+   * The media a cue shows. An ID and two enums — deliberately no path, no URL and no filename, so
+   * nothing here can be made to point at a file of the sender's choosing.
+   */
+  media: vOptional(
+    vObject({
+      assetId: vId(),
+      kind: vEnum(['image', 'video'] as const),
+      fit: vEnum(['cover', 'contain'] as const),
+    }),
+  ),
+  /*
    * Structured scripture identity, bounded field by field.
    *
    * Validated as a whole object rather than accepted as opaque, because it crosses to the audience
@@ -246,6 +257,11 @@ export const IPC_VALIDATORS: Readonly<Record<IpcChannel, Validator<unknown>>> = 
   // the only importable files are ones a human explicitly chose. See §4.
   'media:import': vVoid(),
   'media:delete': vObject({ id: vId() }),
+  'media:setFavorite': vObject({ id: vId(), isFavorite: vBoolean() }),
+  // Null clears it. The repository also trims and collapses blank strings to null, so "" and
+  // "no category" cannot become two entries in the filter bar.
+  'media:setCategory': vObject({ id: vId(), category: vNullable(vString({ max: 80 })) }),
+  'media:categories': vVoid(),
 
   'bible:translations': vVoid(),
   'bible:lookup': vObject({

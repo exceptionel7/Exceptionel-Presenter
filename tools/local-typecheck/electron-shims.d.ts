@@ -100,8 +100,47 @@ declare module 'electron' {
     openPath(path: string): Promise<string>;
   };
 
+  /**
+   * Chromium's image decoder, used for media thumbnails (Phase 5).
+   *
+   * It has no VIDEO decoder, which is why a video gets no poster frame — see services/thumbnails.ts.
+   */
+  export const nativeImage: {
+    createFromPath(path: string): {
+      isEmpty(): boolean;
+      getSize(): { width: number; height: number };
+      resize(options: { width?: number; height?: number; quality?: string }): {
+        toPNG(): Uint8Array;
+      };
+    };
+  };
+
+  /** Chromium's network stack. `net.fetch` also serves `file://` URLs, including byte ranges. */
+  export const net: {
+    fetch(url: string, init?: { headers?: Record<string, string> }): Promise<Response>;
+  };
+
+  export interface ProtocolApi {
+    handle(
+      scheme: string,
+      handler: (request: {
+        url: string;
+        headers?: { get(name: string): string | null };
+      }) => Promise<Response> | Response,
+    ): void;
+    unhandle(scheme: string): void;
+  }
+
+  export const protocol: ProtocolApi & {
+    /** Honoured ONLY before the app is ready. Registering late fails silently. */
+    registerSchemesAsPrivileged(
+      schemes: { scheme: string; privileges: Record<string, boolean> }[],
+    ): void;
+  };
+
   export const session: {
     defaultSession: {
+      protocol: ProtocolApi;
       webRequest: {
         onHeadersReceived(
           listener: (

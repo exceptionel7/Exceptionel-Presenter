@@ -9,7 +9,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -210,21 +218,68 @@ test('a missing file reports why, quoting its name', async () => {
   }
 });
 
-test('an oversized file is refused with both its size and the limit', async () => {
+test('an oversized file is refused with both its size and the limit, and is never read', async () => {
   const dir = scratch();
   try {
-    // A real 17 MB file rather than a stubbed stat: the size check has to hold against the disk.
-    const path = join(dir, 'logo.png');
-    writeFileSync(path, new Uint8Array(17 * 1024 * 1024));
+    /*
+     * A real file of a real size, made SPARSE with truncate rather than by allocating 65 MB. The
+     * check has to hold against what the filesystem reports, so stubbing `stat` would test nothing;
+     * but writing 65 MB of zeroes to prove it would make the suite slower for no extra confidence.
+     */
+    const path = join(dir, 'enormous.png');
+    writeFileSync(path, new Uint8Array(0));
+    truncateSync(path, 65 * 1024 * 1024);
 
-    // A PNG classifies as `image` (64 MB ceiling), so it passes; the same bytes as a logo would not.
-    const asImage = await prepareImport(path);
-    assert.ok(asImage.ok, '17 MB is within the image ceiling');
+    let hashed = false;
+    const outcome = await prepareImport(path, {
+      hash: async () => {
+        hashed = true;
+        return 'deadbeef';
+      },
+    });
 
-    const big = join(dir, 'huge.mp3');
-    writeFileSync(big, new Uint8Array(1024));
-    const audio = await prepareImport(big);
-    assert.ok(audio.ok);
+    assert.ok(!outcome.ok);
+    assert.match(outcome.reason, /65\.0 MB/, 'the operator is told how big it is');
+    assert.match(outcome.reason, /64\.0 MB/, 'and what the limit is');
+    assert.match(outcome.reason, /image/, 'and which limit applies');
+    // Reading 65 MB only to refuse it wastes the operator's time for nothing.
+    assert.equal(hashed, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a file just inside the ceiling is accepted', async () => {
+  const dir = scratch();
+  try {
+    // The boundary itself: 64 MB exactly must pass, or the stated limit is a lie.
+    const path = join(dir, 'exactly-at-the-limit.png');
+    writeFileSync(path, new Uint8Array(0));
+    truncateSync(path, 64 * 1024 * 1024);
+
+    const outcome = await prepareImport(path, { hash: async () => 'a'.repeat(64) });
+    assert.ok(outcome.ok, '64 MB is within a 64 MB limit');
+    assert.equal(outcome.prepared.bytes, 64 * 1024 * 1024);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the video ceiling is far larger than the image one, because videos are', async () => {
+  const dir = scratch();
+  try {
+    // 200 MB: refused as an image, fine as a video. Same bytes, different ceiling.
+    const asVideo = join(dir, 'sermon-bumper.mp4');
+    writeFileSync(asVideo, new Uint8Array(0));
+    truncateSync(asVideo, 200 * 1024 * 1024);
+    const video = await prepareImport(asVideo, { hash: async () => 'b'.repeat(64) });
+    assert.ok(video.ok, 'a 200 MB video is ordinary');
+
+    const asImage = join(dir, 'sermon-bumper.png');
+    writeFileSync(asImage, new Uint8Array(0));
+    truncateSync(asImage, 200 * 1024 * 1024);
+    const image = await prepareImport(asImage, { hash: async () => 'c'.repeat(64) });
+    assert.ok(!image.ok, 'a 200 MB still image is a mistake');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

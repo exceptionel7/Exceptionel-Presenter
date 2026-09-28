@@ -134,7 +134,34 @@ export function openService(
     return resolved;
   };
 
-  const built = buildCues({ service, songs, themes, passages, resolveSpec });
+  /*
+   * Media is resolved here too, and only the assets this service references.
+   *
+   * Just the kind and the filename cross into the cue builder. Not the path — a cue is broadcast to
+   * the audience window, and putting `C:\Users\…` into a message every renderer receives would undo
+   * the entire reason the `app-media:` protocol exists.
+   *
+   * An asset that has been deleted is simply absent from the map, and `buildCues` reports the item as
+   * missing media. The service still opens, which is what matters at five to eleven on a Sunday.
+   */
+  const media = new Map<string, { kind: 'image' | 'video'; filename: string }>();
+  for (const item of service.items) {
+    if (item.kind !== 'image' && item.kind !== 'video') continue;
+    if (item.refId === null || media.has(item.refId)) continue;
+
+    const asset = db.media.get(item.refId);
+    // Only kinds the presentation engine can actually paint in the media layer. An audio file put
+    // there by a hand-edited running order is reported as missing rather than rendered as silence.
+    if (asset && (asset.kind === 'video' || asset.kind === 'image' || asset.kind === 'background')) {
+      media.set(item.refId, {
+        // `background` is a still image as far as rendering is concerned.
+        kind: asset.kind === 'video' ? 'video' : 'image',
+        filename: asset.filename,
+      });
+    }
+  }
+
+  const built = buildCues({ service, songs, themes, passages, resolveSpec, media });
 
   live.setCues(built.cues);
 

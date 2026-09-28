@@ -45,7 +45,14 @@ export type SkipReason =
   | { code: 'missing-song'; phase: null; detail: string }
   | { code: 'empty-song'; phase: null; detail: string }
   /** A scripture item whose passage could not be resolved: bad reference, or translation removed. */
-  | { code: 'scripture-unavailable'; phase: null; detail: string };
+  | { code: 'scripture-unavailable'; phase: null; detail: string }
+  /**
+   * A media item with nothing to show: no asset chosen, or the asset was deleted from the library.
+   *
+   * Not `not-implemented`: media IS implemented, and this is something the operator can fix in the
+   * running order rather than something they have to wait for a release to get.
+   */
+  | { code: 'missing-media'; phase: null; detail: string };
 
 export interface SkippedItem {
   itemId: string;
@@ -100,6 +107,14 @@ export function buildCues(input: {
    * that has no theme data to hand.
    */
   resolveSpec?: (themeId: string | null) => ThemeSpec;
+  /**
+   * Imported media, keyed by ASSET id, for image and video items.
+   *
+   * Handed in for the same reason as `passages`: this function is pure and the library lives in
+   * SQLite. Only what a cue needs is passed — the kind, so the renderer knows whether to build an
+   * <img> or a <video>, and the filename, for a label when the item has none. Never a path.
+   */
+  media?: ReadonlyMap<string, { kind: 'image' | 'video'; filename: string }>;
 }): BuiltCues {
   const themes = input.themes ?? NO_THEMES;
   const songsById = new Map(input.songs.map((song) => [song.id, song]));
@@ -262,13 +277,60 @@ export function buildCues(input: {
       }
 
       case 'image':
-      case 'video':
-        skip(item, {
-          code: 'not-implemented',
-          phase: 'Phase 5',
-          detail: 'Images and video need the media library, which handles import and streaming playback.',
+      case 'video': {
+        const assetId = item.refId ?? '';
+        if (assetId === '') {
+          skip(item, {
+            code: 'missing-media',
+            phase: null,
+            detail: 'No file has been chosen for this item. Pick one from the media library.',
+          });
+          continue;
+        }
+
+        const asset = input.media?.get(assetId);
+        if (!asset) {
+          // Deleted from the library after the service was built. The operator can re-import it or
+          // remove the item; either way they need to know before Sunday rather than during it.
+          skip(item, {
+            code: 'missing-media',
+            phase: null,
+            detail: 'That file is no longer in your media library. Import it again or remove this item.',
+          });
+          continue;
+        }
+
+        cues.push({
+          id: cueId(item.id, 0),
+          /*
+           * The ASSET's kind wins over the item's.
+           *
+           * They can disagree: an item saved as `image` whose asset was later replaced, or a running
+           * order edited by hand. Trusting the item would build an <img> for an MP4, which renders as
+           * a broken-image icon on the projector. The asset knows what it is.
+           */
+          kind: asset.kind,
+          itemId: item.id,
+          label: item.label === '' ? asset.filename : item.label,
+          // No words. A media slide is the picture; the text layer paints nothing.
+          lines: [],
+          /*
+           * The service theme, or the application default. There is no `themes.media`: a media slide
+           * has no text, so the only part of a theme it uses is the transition. Inventing a fourth
+           * per-type setting for that would be a control with almost nothing behind it.
+           */
+          themeId: serviceTheme ?? themes.default,
+          media: {
+            assetId,
+            kind: asset.kind,
+            // `cover` unless the item explicitly asks to letterbox — right for a photograph, wrong
+            // for a diagram whose edges carry words.
+            fit: item.config['fit'] === 'contain' ? 'contain' : 'cover',
+          },
+          ...notesOf(item),
         });
         continue;
+      }
 
       case 'announcement':
         skip(item, {

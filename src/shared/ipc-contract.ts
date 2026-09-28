@@ -15,7 +15,7 @@ import type {
   CameraProfile,
   ChurchProfile,
   DisplayInfo,
-  MediaAsset,
+  MediaKind,
   OutputAssignment,
   OutputStatus,
   RecoverySnapshot,
@@ -82,9 +82,29 @@ export interface IpcRequestMap {
   'themes:delete': { req: { id: string }; res: void };
 
   // media (Section 13) — Phase 5
-  'media:list': { req: MediaQuery; res: MediaAsset[] };
-  'media:import': { req: void; res: MediaAsset[] }; // opens a main-process dialog
+  /**
+   * The library, as the renderer is allowed to see it.
+   *
+   * `MediaAssetView`, NOT `MediaAsset`: the entity carries `absPath`, and a filesystem path must
+   * never cross the bridge. The view replaces it with an `app-media://` URL addressed by id.
+   */
+  'media:list': { req: MediaQuery; res: MediaAssetView[] };
+  /**
+   * Imports whatever the operator picks in a main-process dialog.
+   *
+   * Takes NO payload, deliberately. A renderer cannot name a path to import, so the only importable
+   * files are ones a human explicitly chose in a native dialog. Same rule as `bible:import`.
+   *
+   * Reports per-file outcomes rather than a bare list, because a folder of media routinely contains
+   * something that cannot be presented, and "37 of 40 added" is the honest answer.
+   */
+  'media:import': { req: void; res: MediaImportReport };
   'media:delete': { req: { id: string }; res: void };
+  'media:setFavorite': { req: { id: string; isFavorite: boolean }; res: void };
+  /** Null clears the category. */
+  'media:setCategory': { req: { id: string; category: string | null }; res: void };
+  /** The categories actually in use, for the filter bar. */
+  'media:categories': { req: void; res: string[] };
 
   // bible (Section 8) — Phase 4
   'bible:translations': { req: void; res: BibleTranslation[] };
@@ -260,6 +280,9 @@ export const IPC_CHANNELS = Object.freeze([
   'media:list',
   'media:import',
   'media:delete',
+  'media:setFavorite',
+  'media:setCategory',
+  'media:categories',
   'bible:translations',
   'bible:lookup',
   'bible:books',
@@ -455,6 +478,58 @@ export interface MediaQuery {
   limit?: number;
   offset?: number;
 }
+
+/**
+ * An asset as a renderer sees it.
+ *
+ * Derived from `MediaAsset` by REMOVING `absPath` and `thumbnailPath` and adding URLs in their place.
+ * Written out in full rather than as an `Omit<>`, so that adding a path-shaped field to the entity
+ * later cannot quietly leak it across the bridge — a new field has to be added here deliberately.
+ *
+ * `hash` is also absent: the renderer has no use for it, and it is the one field that would let a
+ * compromised renderer recognise files it was never shown.
+ */
+export interface MediaAssetView {
+  id: string;
+  kind: MediaKind;
+  filename: string;
+  mime: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  category: string | null;
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** `app-media://<id>` — the original file, served by main after validating the id. */
+  url: string;
+  /** `app-media://<id>/thumbnail`, or null when none has been generated. */
+  thumbnailUrl: string | null;
+}
+
+/** One file that could not be imported, and why. */
+export interface RefusedMedia {
+  filename: string;
+  reason: string;
+}
+
+export type MediaImportReport =
+  | {
+      outcome: 'completed';
+      added: MediaAssetView[];
+      /**
+       * Files already in the library, by content.
+       *
+       * Reported rather than counted as added: telling an operator forty files were imported when
+       * eight were duplicates is a lie they discover later, in the media grid, while looking for
+       * something else.
+       */
+      duplicates: MediaAssetView[];
+      refused: RefusedMedia[];
+    }
+  /** The operator closed the dialog. Not an error, and must not produce a banner. */
+  | { outcome: 'cancelled' };
 
 export interface AnnouncementDraft {
   id?: string;

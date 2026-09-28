@@ -227,9 +227,12 @@ test('a structured AppFailure thrown by a handler reaches the UI intact', async 
 test('every NOT IMPLEMENTED channel says so honestly, with a phase', async () => {
   const h = harness();
   const pending: [string, unknown][] = [
-    ['media:list', {}],
-    ['media:import', undefined],
-    ['media:delete', { id: 'media_x' }],
+    /*
+     * media:* left this list in Phase 5. They still report honestly HERE, because this harness builds
+     * no media service — which is the same condition as a build where the service failed to start.
+     * That case is covered on purpose in tests/media-ipc.test.ts; the working case is covered there
+     * too, with a real service attached.
+     */
     ['bible:translations', undefined],
     ['announcements:list', undefined],
     ['display:list', undefined],

@@ -79,6 +79,11 @@ export function OutputApp(): JSX.Element {
       lines={cue?.lines ?? []}
       visibility={visibility}
       cameraStream={wireless.liveStream}
+      /*
+       * The media this cue IS, when it is one. Absent (`undefined`) on every other cue, which is what
+       * lets the theme's own background show through — see `resolveSlideMedia`.
+       */
+      {...(cue?.media === undefined ? {} : { media: cue.media })}
       // The scripture reference for THIS slide. Absent on lyric cues, which need none.
       {...(cue?.caption === undefined ? {} : { caption: cue.caption })}
       {...(cue ? { transitionKey: cue.id } : {})}

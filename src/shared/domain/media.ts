@@ -219,3 +219,80 @@ export function describeMediaKind(kind: MediaKind): string {
 /** True for kinds the presentation engine can put behind text. */
 export const canBeBackground = (kind: MediaKind): boolean =>
   kind === 'image' || kind === 'video' || kind === 'background';
+
+/**
+ * True for kinds that are a single still frame an image decoder can open.
+ *
+ * Deliberately NOT the same set as `canBeBackground`, which includes video (playable behind text, but
+ * not decodable by an image decoder) and excludes logos (not a background, but very much an image).
+ * The two were conflated once and logos silently lost their thumbnails for it.
+ */
+export const isStillImage = (kind: MediaKind): boolean =>
+  kind === 'image' || kind === 'background' || kind === 'logo';
+
+
+// ── addressing media from a renderer ────────────────────────────────────────────
+
+/**
+ * The custom scheme renderers use to fetch media.
+ *
+ * A renderer NEVER receives a filesystem path. It addresses an asset by its id, and main resolves
+ * that id against the database to find the file. Two reasons this is worth a custom protocol rather
+ * than just allowing `file:`:
+ *
+ *  - `file:` in `img-src`/`media-src` would let any markup in the app read any file the user can,
+ *    and would put real paths — including the operator's name, in `C:\Users\...` — into the DOM.
+ *  - An id is validated against a row. A path is validated against a guess.
+ *
+ * The name matches what `security/policy.ts` already allows in the Content-Security-Policy; changing
+ * it here without changing that would produce silently blank backgrounds with only a console warning.
+ */
+export const MEDIA_PROTOCOL = 'app-media';
+
+/** Path segment appended for the generated thumbnail rather than the original. */
+export const THUMBNAIL_SEGMENT = 'thumbnail';
+
+export const mediaUrl = (assetId: string): string => `${MEDIA_PROTOCOL}://${assetId}`;
+
+export const mediaThumbnailUrl = (assetId: string): string =>
+  `${MEDIA_PROTOCOL}://${assetId}/${THUMBNAIL_SEGMENT}`;
+
+export type MediaTarget = { assetId: string; want: 'original' | 'thumbnail' };
+
+/**
+ * Parses a request URL back into an asset id and which file was asked for.
+ *
+ * Returns null for anything it does not recognise, INCLUDING an id that is not a plain identifier.
+ * This is the point where a hostile or malformed URL stops, so it rejects rather than sanitises:
+ * there is no useful interpretation of `app-media://../../etc/passwd`, and attempting to clean one up
+ * is how traversal bugs are written.
+ */
+export function parseMediaUrl(url: string): MediaTarget | null {
+  const prefix = `${MEDIA_PROTOCOL}://`;
+  if (!url.startsWith(prefix)) return null;
+
+  // Query and fragment are meaningless here; Chromium may append a cache-buster.
+  const withoutSuffix = url.slice(prefix.length).split(/[?#]/)[0] ?? '';
+
+  const segments = withoutSuffix.split('/');
+  /*
+   * ONE trailing slash is dropped, and only one.
+   *
+   * A `standard` scheme is canonicalised by Chromium, which turns `app-media://media_a` into
+   * `app-media://media_a/` — so refusing a trailing slash would refuse the app's own URLs. Empty
+   * segments are not filtered out wholesale, though: that would also quietly accept `media_a//` and
+   * `media_a//thumbnail`, and an addressing scheme with several spellings per file is one where a
+   * later containment check can be fooled by picking the wrong spelling.
+   */
+  if (segments.length > 1 && segments[segments.length - 1] === '') segments.pop();
+
+  if (segments.length === 0 || segments.length > 2) return null;
+  if (segments.some((segment) => segment === '')) return null;
+
+  const assetId = segments[0] ?? '';
+  // The same alphabet the IPC validators use for an id. `.` is absent, so `..` cannot appear.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(assetId)) return null;
+
+  if (segments.length === 1) return { assetId, want: 'original' };
+  return segments[1] === THUMBNAIL_SEGMENT ? { assetId, want: 'thumbnail' } : null;
+}

@@ -28,8 +28,12 @@ import {
   SCRIM_PADDING_Y,
   backgroundCss,
   fitSlideText,
+  isMediaBackgroundUnset,
+  resolveSlideMedia,
   withOpacity,
+  type SlideMedia,
 } from '@shared/domain/theme.ts';
+import { mediaUrl } from '@shared/domain/media.ts';
 
 /** Which layers of the stack are permitted to paint. Mirrors `resolveAudienceVisibility`. */
 export interface SlideVisibility {
@@ -60,6 +64,17 @@ export interface SlideCanvasProps {
    * renderer holding it is the only one that can paint it.
    */
   cameraStream?: MediaStream | null;
+  /**
+   * An imported image or video to paint in the media layer, overriding the theme's own.
+   *
+   * Two sources feed one layer: a THEME can specify a background, and a CUE can be a piece of media in
+   * its own right. Passing `undefined` (the default) uses the theme's; passing a value overrides it,
+   * and passing `null` deliberately paints nothing.
+   *
+   * Resolved by the caller rather than inside this component, because precedence is a property of the
+   * live state — and there is exactly one place, `resolveSlideMedia`, that decides it.
+   */
+  media?: SlideMedia | null;
   /**
    * A small line beneath the text: a scripture reference, a song's copyright line.
    *
@@ -92,6 +107,7 @@ export function SlideCanvas({
   lines,
   visibility = ALL_VISIBLE,
   cameraStream = null,
+  media: mediaOverride,
   caption,
   transitionKey,
   annotate = false,
@@ -110,6 +126,12 @@ export function SlideCanvas({
   );
 
   const background = backgroundCss(spec);
+  /*
+   * The precedence lives in `resolveSlideMedia`, not here: `undefined` means "no opinion, use the
+   * theme's background", an explicit `null` means "paint nothing". Keeping it in a pure shared
+   * function is what lets a test check the rule without a browser.
+   */
+  const media = resolveSlideMedia(spec, mediaOverride);
   /*
    * A caption alone is enough to show the text layer.
    *
@@ -172,10 +194,65 @@ export function SlideCanvas({
           <Annotation>No camera signal</Annotation>
         )}
 
-        {/* ── z2 MEDIA — NOT IMPLEMENTED until Phase 5 ────────────────────────── */}
-        {annotate && (spec.background.kind === 'image' || spec.background.kind === 'video') && (
+        {/*
+          ── z2 MEDIA ──────────────────────────────────────────────────────────
+          An imported image or video, fetched as `app-media://<id>`. The renderer never learns where
+          the file is; main resolves the id against the library (src/main/protocol/media-protocol.ts).
+
+          HIDDEN rather than unmounted when the layer is not visible, exactly as the camera is. For a
+          video that is the whole point: unmounting would destroy the element, so returning from a
+          black-out would restart the clip from frame one and re-buffer it. An operator blacks out
+          between songs and expects the loop to still be running when they come back.
+        */}
+        {media !== null && media.kind === 'image' && (
+          <img
+            // Keyed on the ASSET, not on the cue. Advancing a lyric must not reload the background.
+            key={media.assetId}
+            src={mediaUrl(media.assetId)}
+            alt=""
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: media.fit,
+              visibility: visibility.showMedia ? 'visible' : 'hidden',
+            }}
+            // Decoded off the main thread where the browser can, so swapping a 4K background does not
+            // drop a frame of the text animation over it.
+            decoding="async"
+          />
+        )}
+
+        {media !== null && media.kind === 'video' && (
+          <video
+            key={media.assetId}
+            src={mediaUrl(media.assetId)}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: media.fit,
+              visibility: visibility.showMedia ? 'visible' : 'hidden',
+            }}
+            autoPlay
+            loop
+            playsInline
+            /*
+             * MUTED, ALWAYS. A background is scenery: the church PA carries the service's sound, and a
+             * loop that also played its own audio would talk over the worship leader. Audio playback
+             * through the app is a separate feature and is NOT IMPLEMENTED — see docs/MEDIA.md.
+             *
+             * It is also what makes `autoPlay` work at all: Chromium refuses to autoplay a video with
+             * sound, so an unmuted background would simply sit on its first frame.
+             */
+            muted
+          />
+        )}
+
+        {/*
+          A theme that asks for a media background but names no asset. Operator surfaces only.
+          Rendering black would be indistinguishable from a working solid background, and the person
+          configuring the theme would have no idea what was wrong.
+        */}
+        {annotate && media === null && isMediaBackgroundUnset(spec) && (
           <Annotation>
-            {spec.background.kind === 'image' ? 'Image' : 'Video'} backgrounds arrive in Phase 5
+            No {spec.background.kind === 'image' ? 'image' : 'video'} chosen for this background
           </Annotation>
         )}
 

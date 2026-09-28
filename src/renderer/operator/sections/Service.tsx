@@ -260,6 +260,7 @@ export function ServiceSection(): JSX.Element {
                 spec={previewSpec}
                 lines={selectedCue.lines}
                 cameraStream={cameraStream}
+                {...(selectedCue.media === undefined ? {} : { media: selectedCue.media })}
                 {...(selectedCue.caption === undefined ? {} : { caption: selectedCue.caption })}
                 transitionKey={selectedCue.id}
                 // Operator surface, so honest annotations are welcome here.
@@ -284,6 +285,7 @@ export function ServiceSection(): JSX.Element {
                 // the projector rather than being approximated.
                 visibility={resolveAudienceVisibility(live)}
                 cameraStream={cameraStream}
+                {...(liveCue?.media === undefined ? {} : { media: liveCue.media })}
                 {...(liveCue?.caption === undefined ? {} : { caption: liveCue.caption })}
                 {...(liveCue ? { transitionKey: liveCue.id } : {})}
                 annotate

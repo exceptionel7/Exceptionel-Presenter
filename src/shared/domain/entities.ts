@@ -144,7 +144,30 @@ export interface ServiceSummary {
 // ── themes (Section 16) ─────────────────────────────────────────────────────────
 
 export interface ThemeSpec {
-  background: { kind: 'solid' | 'gradient' | 'image' | 'video' | 'camera'; value: string };
+  background: {
+    kind: 'solid' | 'gradient' | 'image' | 'video' | 'camera';
+    /**
+     * The CSS colour or gradient, for `solid` and `gradient`. Unused by the other kinds, which paint
+     * from a layer of their own rather than from the base layer.
+     */
+    value: string;
+    /**
+     * Which imported asset to show, for `image` and `video` (Phase 5).
+     *
+     * An ID, never a path: the renderer fetches it as `app-media://<id>` and only main can turn that
+     * into a file. Null means the kind was chosen but no picture has been selected yet — a real state
+     * a half-finished theme is in, and one the operator surfaces must name rather than render as
+     * black.
+     */
+    mediaAssetId?: string | null;
+    /**
+     * How the asset fills the 16:9 canvas.
+     *
+     * `cover` crops to fill and is right for nearly every background. `contain` letterboxes, which
+     * matters for a diagram or a poster where cropping would remove the words.
+     */
+    fit?: 'cover' | 'contain';
+  };
   text: {
     fontFamily: string;
     /** Points against the normalised 1920×1080 design canvas (see §5). */

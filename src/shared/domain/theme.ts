@@ -282,11 +282,12 @@ export function withOpacity(hex: string, opacity: number): string {
 }
 
 /**
- * The CSS background for a spec.
+ * The CSS background for a spec, i.e. what the BASE layer (z0) paints.
  *
- * `image` and `video` return null rather than a colour: Phase 5 owns media, and painting a plausible
- * dark rectangle would misrepresent an unimplemented feature as a working one. `camera` also returns
- * null, because the real camera layer sits beneath the text and must show through.
+ * `camera`, `image` and `video` all return null, and for the same reason in every case: each is
+ * painted by a layer of its own above the base, and a colour underneath would only be something for
+ * them to fail to cover. It is not a stand-in for an unimplemented feature — SlideCanvas paints all
+ * three for real.
  */
 export function backgroundCss(spec: ThemeSpec): string | null {
   switch (spec.background.kind) {
@@ -300,6 +301,57 @@ export function backgroundCss(spec: ThemeSpec): string | null {
   }
 }
 
+/**
+ * What the z2 MEDIA layer should show, or null when it should show nothing.
+ *
+ * Pure, and shared by every surface that paints a slide, so the operator's preview and the audience
+ * screen can never disagree about which background is on.
+ *
+ * Returns null when the kind is `image` or `video` but no asset has been chosen. That is a real state
+ * — a theme someone started configuring and left — and it must be distinguishable from "no media
+ * background", because an operator surface has to say "no image chosen" rather than show black and
+ * let them wonder.
+ */
+export function backgroundMedia(spec: ThemeSpec): SlideMedia | null {
+  const { kind, mediaAssetId, fit } = spec.background;
+  if (kind !== 'image' && kind !== 'video') return null;
+  if (mediaAssetId === null || mediaAssetId === undefined || mediaAssetId === '') return null;
+  return { assetId: mediaAssetId, kind, fit: fit ?? 'cover' };
+}
+
+/** What the media layer paints. Identical whether it came from a theme or from a cue. */
+export interface SlideMedia {
+  assetId: string;
+  kind: 'image' | 'video';
+  fit: 'cover' | 'contain';
+}
+
+/**
+ * Decides what the media layer shows, given a theme and whatever the CUE asked for.
+ *
+ * The precedence, in one place: a cue that IS a piece of media overrides the theme's background; a cue
+ * that explicitly wants nothing there (`null`) gets nothing; a cue with no opinion (`undefined`) gets
+ * the theme's background. Pure, so the operator's preview and the audience screen resolve it
+ * identically — this rule living in a component would be a rule only a browser could check.
+ */
+export function resolveSlideMedia(
+  spec: ThemeSpec,
+  cueMedia?: SlideMedia | null,
+): SlideMedia | null {
+  return cueMedia === undefined ? backgroundMedia(spec) : cueMedia;
+}
+
+/**
+ * True when the theme asks for a media background but names no asset.
+ *
+ * Exists so operator surfaces can annotate honestly. `backgroundMedia` returning null is ambiguous on
+ * its own: it means both "this theme has no media background" and "this theme's media background is
+ * unfinished", and only the second is worth telling someone about.
+ */
+export const isMediaBackgroundUnset = (spec: ThemeSpec): boolean =>
+  (spec.background.kind === 'image' || spec.background.kind === 'video') &&
+  backgroundMedia(spec) === null;
+
 export function describeBackground(spec: ThemeSpec): string {
   switch (spec.background.kind) {
     case 'solid':
@@ -309,8 +361,10 @@ export function describeBackground(spec: ThemeSpec): string {
     case 'camera':
       return 'live camera';
     case 'image':
-      return 'image — Phase 5';
+      return isMediaBackgroundUnset(spec) ? 'image — none chosen' : 'image';
     case 'video':
-      return 'video — Phase 5';
+      // Stated, because it is a real limitation rather than an oversight: a background plays silently
+      // and on a loop. Audio playback is a separate feature and is NOT IMPLEMENTED.
+      return isMediaBackgroundUnset(spec) ? 'video — none chosen' : 'video (silent, looping)';
   }
 }

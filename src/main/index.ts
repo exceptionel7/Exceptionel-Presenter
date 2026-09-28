@@ -10,9 +10,10 @@
  * needs a local `npm run dev`.
  */
 
-import { app, dialog, BrowserWindow } from 'electron';
+import { app, dialog, nativeImage, net, protocol, session, BrowserWindow } from 'electron';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { writeFile } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openDatabase, type AppDatabase } from './db/database.ts';
 import { MigrationFailure } from './db/migrator.ts';
 import { APP_SCHEMA_VERSION } from './db/migrations/index.ts';
@@ -22,6 +23,11 @@ import { createLiveStateService } from './services/live-state-service.ts';
 import { createAutosave } from './services/autosave.ts';
 import { createWirelessCameraService } from './services/wireless-camera-service.ts';
 import { createBibleService } from './services/bible-service.ts';
+import { createMediaService } from './services/media-service.ts';
+import { ensureMediaRoots, mediaRoots } from './services/media-import.ts';
+import { createThumbnailGenerator } from './services/thumbnails.ts';
+import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from './protocol/media-protocol.ts';
+import { dialogExtensions } from '../shared/domain/media.ts';
 import { createCameraSourceRegistry } from './services/camera-source-registry.ts';
 import { createHandlers } from './ipc/handlers.ts';
 import { registerIpc } from './ipc/register.ts';
@@ -43,6 +49,17 @@ interface Runtime {
 }
 
 let runtime: Runtime | null = null;
+
+/*
+ * THE MEDIA SCHEME IS REGISTERED HERE, at module scope, and it has to be.
+ *
+ * `registerSchemesAsPrivileged` is only honoured before the app is ready — by the time `bootstrap`
+ * runs, Chromium has already decided what `app-media:` means. Registering it late fails SILENTLY:
+ * every background is simply absent, with one console warning about a blocked resource to explain it.
+ */
+protocol.registerSchemesAsPrivileged([
+  { scheme: MEDIA_SCHEME_PRIVILEGES.scheme, privileges: { ...MEDIA_SCHEME_PRIVILEGES.privileges } },
+]);
 
 /**
  * A second instance would open the same SQLite file twice and, worse, fight over the
@@ -242,6 +259,70 @@ async function bootstrap(): Promise<void> {
     onLog: (line) => console.log(line),
   });
 
+  /*
+   * MEDIA LIBRARY.
+   *
+   * The dialog lives here, not in the service, for the same reason as the Bible's: a renderer must
+   * never be able to name a path. Main chooses the files, hashes them, copies them into its own
+   * folder and records them, all on the trusted side of the bridge.
+   */
+  const roots = mediaRoots(app.getPath('userData'));
+  await ensureMediaRoots(roots);
+
+  const media = createMediaService({
+    db,
+    roots,
+    chooseFiles: async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Add media to your library',
+        message: 'Choose images, videos or audio. They are copied into your library.',
+        // Multi-select: a church adds a folder of backgrounds at once, not one at a time.
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          // Built from the same table that decides what can be presented, so the dialog cannot
+          // offer a format the importer then refuses.
+          { name: 'Media', extensions: dialogExtensions() },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      });
+      return result.canceled ? [] : result.filePaths;
+    },
+    generateThumbnail: createThumbnailGenerator({
+      decodeImage: (path) => {
+        const image = nativeImage.createFromPath(path);
+        if (image.isEmpty()) return null;
+        const size = image.getSize();
+        return {
+          width: size.width,
+          height: size.height,
+          // `quality: 'good'` rather than 'best': a grid tile does not need the slowest resampler,
+          // and an import of forty backgrounds should not take noticeably longer for it. The width
+          // asked for is already clamped to the original by the generator.
+          toThumbnailPng: (maxWidth) => image.resize({ width: maxWidth, quality: 'good' }).toPNG(),
+        };
+      },
+      write: (path, bytes) => writeFile(path, bytes),
+      join,
+      onLog: (line) => console.log(line),
+    }),
+    onLog: (line) => console.log(line),
+  });
+
+  /*
+   * Registered on the DEFAULT session, which is the one every window in this app uses.
+   *
+   * A window created with its own `partition` would get a different session and would not see this
+   * protocol at all — its backgrounds would simply be missing. Worth stating, because the failure
+   * looks like a media problem rather than a session problem.
+   */
+  registerMediaProtocol({
+    protocol: session.defaultSession.protocol,
+    resolve: (assetId, want) => media.resolveFile(assetId, want),
+    fetchFile: (fileUrl, init) => net.fetch(fileUrl, init),
+    toFileUrl: (path) => pathToFileURL(path).toString(),
+    onLog: (line) => console.log(line),
+  });
+
   const teardownIpc = registerIpc({
     handlers: createHandlers({
       db,
@@ -250,6 +331,7 @@ async function bootstrap(): Promise<void> {
       quit: () => app.quit(),
       wireless,
       bible,
+      media,
       ensureMediaHost: () => {
         windows.ensureMediaHost();
       },
