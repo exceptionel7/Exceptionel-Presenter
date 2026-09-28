@@ -131,6 +131,32 @@ export const AVERAGE_GLYPH_WIDTH_RATIO = 0.52;
 /** Scale is reduced in fixed steps, so the result is deterministic and testable. */
 const FIT_STEP = 0.02;
 
+/*
+ * THE GEOMETRY THE RENDERER ACTUALLY DRAWS, in canvas units.
+ *
+ * Shared with SlideCanvas rather than duplicated there, because the fitter has to model what will be
+ * painted or it is not fitting anything. The first version measured ONLY the text lines while the
+ * renderer went on to add scrim padding and a caption beneath them — around 110 canvas pixels the
+ * arithmetic knew nothing about. In the Live Worship theme, whose safe area is a 400-pixel lower third,
+ * that was enough to push the last line and the whole reference past the edge, where `overflow: hidden`
+ * silently clipped them. A verse cut off mid-sentence on the audience screen, with nothing to indicate
+ * it had happened.
+ */
+export const SCRIM_PADDING_Y = 24;
+export const SCRIM_PADDING_X = 40;
+/** A caption is a little over half the body size: clearly secondary, still readable from the back. */
+export const CAPTION_SCALE = 0.55;
+/** Gap above the caption, as a fraction of the body font size. */
+export const CAPTION_GAP = 0.45;
+export const CAPTION_LINE_HEIGHT = 1.2;
+
+/**
+ * A little height held back to absorb the difference between predicted and real font metrics.
+ *
+ * Two per cent of the safe area. Slightly smaller type is invisible; a clipped final line is not.
+ */
+export const FIT_SAFETY = 0.02;
+
 export interface SlideFit {
   /** The font size to render at, in canvas points. */
   fontSize: number;
@@ -157,11 +183,29 @@ export function fitSlideText(
   lines: readonly string[],
   spec: ThemeSpec,
   canvas: { width: number; height: number } = DESIGN_CANVAS,
+  options: {
+    /**
+     * Whether a caption will be drawn beneath the text.
+     *
+     * Must be passed when one will be, or the fit is computed for a block smaller than the one that gets
+     * painted — which is exactly how a scripture reference and the last line of a verse ended up clipped
+     * off the bottom of the screen.
+     */
+    hasCaption?: boolean;
+  } = {},
 ): SlideFit {
   const declared = spec.text.fontSize;
 
   const availableWidth = canvas.width * (1 - spec.padding.left - spec.padding.right);
-  const availableHeight = canvas.height * (1 - spec.padding.top - spec.padding.bottom);
+  /*
+   * The safe area, less what the renderer adds around the text and a small safety margin.
+   *
+   * The scrim's padding is fixed; the caption scales with the body, so it is folded into `heightAt`
+   * below rather than subtracted once here.
+   */
+  const scrimPadding = spec.textBox.enabled ? SCRIM_PADDING_Y * 2 : 0;
+  const availableHeight =
+    canvas.height * (1 - spec.padding.top - spec.padding.bottom) * (1 - FIT_SAFETY) - scrimPadding;
 
   const countWrapped = (fontSize: number): number => {
     // Advance per character including tracking, since letter spacing genuinely changes wrapping.
@@ -177,7 +221,13 @@ export function fitSlideText(
     return total;
   };
 
-  const heightAt = (fontSize: number): number => countWrapped(fontSize) * fontSize * spec.text.lineHeight;
+  /** Everything inside the scrim: the wrapped lines, and the caption if one will be drawn. */
+  const heightAt = (fontSize: number): number => {
+    const body = countWrapped(fontSize) * fontSize * spec.text.lineHeight;
+    const caption =
+      options.hasCaption === true ? fontSize * (CAPTION_SCALE * CAPTION_LINE_HEIGHT + CAPTION_GAP) : 0;
+    return body + caption;
+  };
 
   if (lines.length === 0) {
     return { fontSize: declared, scale: 1, estimatedLineCount: 0, limitedBy: 'none' };

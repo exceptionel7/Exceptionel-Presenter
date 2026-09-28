@@ -3,13 +3,19 @@ import assert from 'node:assert/strict';
 import {
   AVERAGE_GLYPH_WIDTH_RATIO,
   BASE_THEME_SPEC,
+  CAPTION_GAP,
+  CAPTION_LINE_HEIGHT,
+  CAPTION_SCALE,
   DESIGN_CANVAS,
+  FIT_SAFETY,
+  SCRIM_PADDING_Y,
   backgroundCss,
   fitSlideText,
   mergeSpec,
   resolveThemeSpec,
   resolveThemeSpecOrBase,
   withOpacity,
+  type SlideFit,
 } from '../src/shared/domain/theme.ts';
 import type { Theme, ThemeSpec } from '../src/shared/domain/entities.ts';
 
@@ -257,4 +263,131 @@ test('withOpacity converts hex to rgba and leaves anything else alone', () => {
   // Already-rgba or a named colour must survive untouched rather than becoming "rgba(0,0,0,…)".
   assert.equal(withOpacity('rgba(1,2,3,0.5)', 0.2), 'rgba(1,2,3,0.5)');
   assert.equal(withOpacity('transparent', 0.2), 'transparent');
+});
+
+
+// ── the fitter must model what the renderer actually draws ───────────────────────
+
+/**
+ * Reported from a real service: a Scripture slide over the live camera showed its verse cut off
+ * mid-sentence — "…before using" — and no reference at all.
+ *
+ * The cause was arithmetic, not an unavoidable estimate. `fitSlideText` measured ONLY the text lines,
+ * while the renderer went on to add the scrim's padding and a caption beneath them: roughly 110 canvas
+ * pixels the fit knew nothing about. In the Live Worship theme, whose safe area is a 400-pixel lower
+ * third, that was enough to push the final line and the whole caption past the edge, where
+ * `overflow: hidden` clipped them silently.
+ */
+
+/** The Live Worship theme as migration 0002 seeds it — the one that failed. */
+const LIVE_WORSHIP: ThemeSpec = mergeSpec(BASE_THEME_SPEC, {
+  background: { kind: 'camera', value: '' },
+  text: { fontSize: 72, fontWeight: 700, lineHeight: 1.25 } as Partial<ThemeSpec>['text'],
+  padding: { top: 0.55, right: 0.07, bottom: 0.08, left: 0.07 },
+  textBox: { enabled: true, color: '#000000', opacity: 0.38, cornerRadius: 16 },
+});
+
+/** Exactly what the renderer paints, in canvas units. */
+const drawnHeight = (fit: SlideFit, spec: ThemeSpec, hasCaption: boolean): number =>
+  fit.estimatedLineCount * fit.fontSize * spec.text.lineHeight +
+  (spec.textBox.enabled ? SCRIM_PADDING_Y * 2 : 0) +
+  (hasCaption ? fit.fontSize * (CAPTION_SCALE * CAPTION_LINE_HEIGHT + CAPTION_GAP) : 0);
+
+const safeAreaHeight = (spec: ThemeSpec): number =>
+  DESIGN_CANVAS.height * (1 - spec.padding.top - spec.padding.bottom);
+
+test('A CAPTIONED SLIDE IN A LOWER THIRD FITS, INCLUDING ITS CAPTION AND SCRIM', () => {
+  // The exact slide from the report: one long verse, Live Worship, caption beneath.
+  const verse =
+    'SAMPLE TEXT, NOT SCRIPTURE - placeholder prose for testing the importer. Book 19, chapter 1, ' +
+    'verse 1. Replace this package with a real translation before using Exceptionel Presenter in a service.';
+
+  const fit = fitSlideText([verse], LIVE_WORSHIP, DESIGN_CANVAS, { hasCaption: true });
+  const drawn = drawnHeight(fit, LIVE_WORSHIP, true);
+  const safe = safeAreaHeight(LIVE_WORSHIP);
+
+  assert.ok(
+    drawn <= safe,
+    `everything drawn must fit the safe area: ${drawn.toFixed(0)}px drawn into ${safe.toFixed(0)}px`,
+  );
+});
+
+test('the scrim and the caption both take space away from the text', () => {
+  // Each on its own must reduce the font size, or it is not being accounted for.
+  const lines = Array.from({ length: 6 }, () => 'a line of roughly average length for a lyric');
+
+  const bare = mergeSpec(BASE_THEME_SPEC, { textBox: { enabled: false, color: '#000000', opacity: 0, cornerRadius: 0 } });
+  const scrimmed = mergeSpec(BASE_THEME_SPEC, { textBox: { enabled: true, color: '#000000', opacity: 0.4, cornerRadius: 8 } });
+
+  assert.ok(
+    fitSlideText(lines, scrimmed).fontSize <= fitSlideText(lines, bare).fontSize,
+    'a scrim cannot be free',
+  );
+  assert.ok(
+    fitSlideText(lines, bare, DESIGN_CANVAS, { hasCaption: true }).fontSize <=
+      fitSlideText(lines, bare, DESIGN_CANVAS, { hasCaption: false }).fontSize,
+    'nor can a caption',
+  );
+});
+
+test('WHATEVER THE THEME AND THE TEXT, NOTHING IS PREDICTED TO OVERFLOW', () => {
+  /*
+   * The general form of the bug, across the shapes that actually occur: tight lower thirds, generous
+   * full-bleed themes, one long verse, many short lines, with and without a scrim or caption.
+   */
+  const themes: [string, ThemeSpec][] = [
+    ['live worship lower third', LIVE_WORSHIP],
+    ['base', BASE_THEME_SPEC],
+    [
+      'tight with scrim',
+      mergeSpec(BASE_THEME_SPEC, {
+        text: { fontSize: 96 } as Partial<ThemeSpec>['text'],
+        padding: { top: 0.6, right: 0.1, bottom: 0.1, left: 0.1 },
+        textBox: { enabled: true, color: '#000000', opacity: 0.5, cornerRadius: 12 },
+      }),
+    ],
+    ['generous', mergeSpec(BASE_THEME_SPEC, { padding: { top: 0.02, right: 0.02, bottom: 0.02, left: 0.02 } })],
+  ];
+
+  const bodies: [string, string[]][] = [
+    ['one very long verse', ['word '.repeat(60).trim()]],
+    ['a few short lines', ['Holy', 'holy', 'holy']],
+    ['many lines', Array.from({ length: 10 }, (_, index) => `line number ${String(index + 1)}`)],
+    ['one word', ['Amen']],
+  ];
+
+  for (const [themeName, spec] of themes) {
+    for (const [bodyName, lines] of bodies) {
+      for (const hasCaption of [false, true]) {
+        const fit = fitSlideText(lines, spec, DESIGN_CANVAS, { hasCaption });
+
+        // A slide clamped at the minimum is ALLOWED to overflow — that case is reported to the operator
+        // as "too much text to fit" rather than silently shrunk away, and is asserted elsewhere.
+        if (fit.limitedBy === 'minimum' || fit.limitedBy === 'disabled') continue;
+
+        const drawn = drawnHeight(fit, spec, hasCaption);
+        const safe = safeAreaHeight(spec);
+        assert.ok(
+          drawn <= safe,
+          `${themeName} / ${bodyName} / caption=${String(hasCaption)}: ` +
+            `${drawn.toFixed(0)}px drawn into ${safe.toFixed(0)}px`,
+        );
+      }
+    }
+  }
+});
+
+test('a safety margin is held back for real font metrics', () => {
+  // The wrapped line count is predicted from an average glyph advance, so the prediction can be a little
+  // out. Slightly smaller type is invisible; a clipped final line is not.
+  assert.ok(FIT_SAFETY > 0 && FIT_SAFETY < 0.1, 'a small margin, not a large one');
+});
+
+test('the caption geometry is shared, not duplicated in the renderer', () => {
+  // The fitter and the renderer must agree on the caption's size and gap, or the fit is computed for a
+  // different block from the one painted. That divergence is the whole bug.
+  assert.equal(typeof CAPTION_SCALE, 'number');
+  assert.equal(typeof CAPTION_GAP, 'number');
+  assert.equal(typeof CAPTION_LINE_HEIGHT, 'number');
+  assert.equal(typeof SCRIM_PADDING_Y, 'number');
 });

@@ -270,7 +270,7 @@ test('the caption lives INSIDE the text layer, so Clear hides it with its verses
   assert.match(textLayer, /captionStyle/, 'the caption is rendered within the text layer');
 
   // Gated by showText along with the body.
-  assert.match(SLIDE_CANVAS, /visibility\.showText && \(lines\.length > 0 \|\| \(caption \?\? ''\) !== ''\)/);
+  assert.match(SLIDE_CANVAS, /visibility\.showText && \(lines\.length > 0 \|\| hasCaption\)/);
 });
 
 test('the caption is sized from the FITTED body size, not the theme size', () => {
@@ -285,8 +285,10 @@ test('VERSE PACKING REUSES THE TESTED FITTING FUNCTION', () => {
    * hard-coded verses-per-slide constant would disagree with the renderer the moment a theme changed
    * its type size.
    */
-  assert.match(SCRIPTURE_DOMAIN, /import \{ fitSlideText \}/);
-  assert.match(SCRIPTURE_DOMAIN, /fitSlideText\(linesFor\(candidate\), spec\)\.scale === 1/);
+  assert.match(SCRIPTURE_DOMAIN, /import \{[^}]*\bfitSlideText\b[^}]*\} from '\.\/theme\.ts'/);
+  assert.match(SCRIPTURE_DOMAIN, /fitSlideText\(\s*linesFor\(candidate\),\s*spec,\s*DESIGN_CANVAS,\s*\{ hasCaption: true \},?\s*\)\.scale === 1/);
+  // `hasCaption: true` is not optional here: every scripture slide carries a reference, and omitting it
+  // packed one verse too many so the last line was clipped off the bottom of the screen.
 });
 
 test('camera + scripture composes exactly as camera + lyrics does', () => {

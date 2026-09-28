@@ -15,7 +15,7 @@
  */
 
 import type { ThemeSpec } from './entities.ts';
-import { fitSlideText } from './theme.ts';
+import { DESIGN_CANVAS, fitSlideText } from './theme.ts';
 
 export interface ScriptureVerse {
   /** As this translation names the book, which may not be the canonical English. */
@@ -137,7 +137,9 @@ export function packPassageIntoSlides(
     }
 
     // Does the candidate still fit at the theme's declared size?
-    if (fitSlideText(linesFor(candidate), spec).scale === 1) {
+    // `hasCaption: true` because every scripture slide is captioned with its reference. Omitting it
+    // packed one verse too many and the last line was clipped off the bottom of the screen.
+    if (fitSlideText(linesFor(candidate), spec, DESIGN_CANVAS, { hasCaption: true }).scale === 1) {
       current = candidate;
       continue;
     }

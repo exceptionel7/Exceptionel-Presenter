@@ -20,7 +20,12 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import type { ThemeSpec } from '@shared/domain/entities.ts';
 import {
+  CAPTION_GAP,
+  CAPTION_LINE_HEIGHT,
+  CAPTION_SCALE,
   DESIGN_CANVAS,
+  SCRIM_PADDING_X,
+  SCRIM_PADDING_Y,
   backgroundCss,
   fitSlideText,
   withOpacity,
@@ -94,7 +99,15 @@ export function SlideCanvas({
 }: SlideCanvasProps): JSX.Element {
   // Deterministic and pure, so the preview and the audience screen compute the same size from the
   // same cue. Memoised on identity rather than for correctness.
-  const fit = useMemo(() => fitSlideText(lines, spec), [lines, spec]);
+  const hasCaption = (caption ?? '') !== '';
+  /*
+   * `hasCaption` is passed because the fitter must model what is painted. Without it the caption and the
+   * final line of a long verse were computed as fitting and then clipped by `overflow: hidden`.
+   */
+  const fit = useMemo(
+    () => fitSlideText(lines, spec, DESIGN_CANVAS, { hasCaption }),
+    [lines, spec, hasCaption],
+  );
 
   const background = backgroundCss(spec);
   /*
@@ -104,7 +117,7 @@ export function SlideCanvas({
    * under it — but so would a legitimately captioned slide with no body, and the second case is the one
    * that matters: the operator sees the reference and knows the layer is alive.
    */
-  const hasText = visibility.showText && (lines.length > 0 || (caption ?? '') !== '');
+  const hasText = visibility.showText && (lines.length > 0 || hasCaption);
 
   return (
     <div className={`relative grid place-items-center overflow-hidden bg-black ${className ?? ''}`}>
@@ -208,9 +221,7 @@ export function SlideCanvas({
                 subordinate at every resolution and under auto-fit. Inside the same block, so the
                 theme's alignment and scrim apply and Clear hides it with the words it describes.
               */}
-              {(caption ?? '') !== '' && (
-                <div style={captionStyle(spec, fit.fontSize)}>{caption}</div>
-              )}
+              {hasCaption && <div style={captionStyle(spec, fit.fontSize)}>{caption}</div>}
             </div>
           </div>
         )}
@@ -293,21 +304,19 @@ function captionStyle(spec: ThemeSpec, bodyFontSize: number): CSSProperties {
   return {
     fontFamily: text.fontFamily,
     fontSize: cqh(bodyFontSize * CAPTION_SCALE),
+    lineHeight: CAPTION_LINE_HEIGHT,
     // Lighter than the body: it is a citation, not part of the reading.
     fontWeight: Math.max(text.fontWeight - 200, 300),
     color: text.color,
     textAlign: text.align,
     opacity: 0.78,
     letterSpacing: '0.06em',
-    marginTop: cqh(bodyFontSize * 0.45),
+    marginTop: cqh(bodyFontSize * CAPTION_GAP),
     ...(text.shadow.enabled
       ? { textShadow: `0 ${cqh(text.shadow.offsetY)} ${cqh(text.shadow.blur)} ${text.shadow.color}` }
       : {}),
   } as CSSProperties;
 }
-
-/** A caption is a little over half the body size: clearly secondary, still readable from the back. */
-const CAPTION_SCALE = 0.55;
 
 /** The scrim behind text, which is what makes lyrics legible over a camera feed. */
 function scrimStyle(spec: ThemeSpec): CSSProperties {
@@ -315,7 +324,7 @@ function scrimStyle(spec: ThemeSpec): CSSProperties {
   return {
     backgroundColor: withOpacity(spec.textBox.color, spec.textBox.opacity),
     borderRadius: cqh(spec.textBox.cornerRadius),
-    padding: `${cqh(24)} ${cqh(40)}`,
+    padding: `${cqh(SCRIM_PADDING_Y)} ${cqh(SCRIM_PADDING_X)}`,
   };
 }
 
