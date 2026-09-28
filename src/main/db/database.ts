@@ -24,6 +24,7 @@ import { createThemeRepository, type ThemeRepository } from './repositories/them
 import { createRecoveryRepository, type RecoveryRepository } from './repositories/recovery.ts';
 import { createBibleRepository, type BibleRepository } from './repositories/bible.ts';
 import { createIdentityRepository, type IdentityRepository } from './repositories/identity.ts';
+import { createMediaRepository, type MediaRepository } from './repositories/media.ts';
 
 export interface AppDatabase {
   readonly driver: SqliteDriver;
@@ -40,6 +41,13 @@ export interface AppDatabase {
   readonly services: ServiceRepository;
   readonly themes: ThemeRepository;
   readonly recovery: RecoveryRepository;
+  /**
+   * The imported media library (Phase 5).
+   *
+   * Rows only. The files themselves are written and removed by services/media-import.ts, which is the
+   * single place allowed to touch the filesystem for media.
+   */
+  readonly media: MediaRepository;
   /**
    * Installed Bible translations.
    *
@@ -87,6 +95,7 @@ export function openDatabase(options: OpenDatabaseOptions): AppDatabase {
     services: createServiceRepository(driver, identity),
     themes: createThemeRepository(driver, identity),
     recovery: createRecoveryRepository(driver),
+    media: createMediaRepository(driver, identity),
     bible: createBibleRepository(driver),
 
     transaction: (fn) => driver.transaction(fn),

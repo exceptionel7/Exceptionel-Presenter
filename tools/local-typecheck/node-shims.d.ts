@@ -95,6 +95,42 @@ declare module 'node:fs' {
   ): void;
 }
 
+/**
+ * The promise API, used by media import (Phase 5).
+ *
+ * WHY THE ASYNC FORM AT ALL, when everything else in main is synchronous. Hashing a four-gigabyte
+ * video with `readFileSync` would hold the main process — the one dispatching slide changes to the
+ * projector — for the entire read. `open`/`read` in a loop hands each chunk to libuv's threadpool, so
+ * the event loop keeps turning and the operator's next cue is not queued behind an import.
+ */
+declare module 'node:fs/promises' {
+  export interface FileHandleLike {
+    read<T extends Uint8Array>(
+      buffer: T,
+      offset: number,
+      length: number,
+      position: number | null,
+    ): Promise<{ bytesRead: number; buffer: T }>;
+    close(): Promise<void>;
+  }
+  export function open(path: string, flags?: string): Promise<FileHandleLike>;
+  /** Uses the platform's copy-on-write or kernel copy path where available. */
+  export function copyFile(src: string, dest: string, mode?: number): Promise<void>;
+  export function mkdir(path: string, options?: { recursive?: boolean }): Promise<string | undefined>;
+  export function stat(path: string): Promise<{
+    size: number;
+    isFile(): boolean;
+    isDirectory(): boolean;
+    mtimeMs: number;
+  }>;
+  export function unlink(path: string): Promise<void>;
+  export function access(path: string, mode?: number): Promise<void>;
+  export function rename(src: string, dest: string): Promise<void>;
+  export function writeFile(path: string, data: string | Uint8Array): Promise<void>;
+  export function readFile(path: string, encoding: string): Promise<string>;
+  export function readdir(path: string): Promise<string[]>;
+}
+
 declare module 'node:path' {
   export function join(...parts: string[]): string;
   export function resolve(...parts: string[]): string;
@@ -119,8 +155,19 @@ declare module 'node:crypto' {
   export function randomUUID(): string;
   /** Node returns a Buffer, which is a Uint8Array subclass. */
   export function randomBytes(size: number): Uint8Array & { toString(encoding: string): string };
+  /**
+   * Accepts bytes as well as a string, and is chainable, as Node's really is.
+   *
+   * The narrower form declared here previously would have forced file contents to be decoded to a string
+   * before hashing — which is both wasteful and wrong for binary media, since a lossy decode changes the
+   * digest. A shim narrower than the API it stands in for pushes people to write worse code to satisfy it.
+   */
   export function createHash(algorithm: string): {
-    update(data: string): { digest(encoding: string): string };
+    update(data: string | Uint8Array): {
+      digest(encoding: string): string;
+      update(data: string | Uint8Array): unknown;
+    };
+    digest(encoding: string): string;
   };
 
   export interface KeyObject {

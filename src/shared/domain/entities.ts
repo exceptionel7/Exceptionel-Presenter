@@ -263,18 +263,35 @@ export type MediaKind = (typeof MEDIA_KINDS)[number];
 export interface MediaAsset {
   id: string;
   kind: MediaKind;
+  /** The name the operator will recognise, with their own capitals. */
   filename: string;
-  /** Absolute path. Main process only — never trusted when arriving from a renderer. */
+  /**
+   * Absolute path inside the app's own media root.
+   *
+   * MAIN PROCESS ONLY. Never sent to a renderer and never trusted when arriving from one: renderers
+   * address media by id through the `app-media:` protocol, so a filesystem path never crosses the
+   * bridge in either direction. See src/main/services/media-import.ts.
+   */
   absPath: string;
   mime: string;
   bytes: number;
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  /** Absolute path to the generated thumbnail. Main process only, for the same reason. */
   thumbnailPath: string | null;
   category: string | null;
   isFavorite: boolean;
+  /**
+   * SHA-256 of the file's contents, hex.
+   *
+   * The identity of the BYTES, which is what makes re-importing a folder of backgrounds recognise
+   * what is already there instead of filling the library with duplicates. Nullable because rows
+   * predating Phase 5 have none.
+   */
+  hash: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 // ── bible (Section 8) ───────────────────────────────────────────────────────────
