@@ -177,6 +177,7 @@ test('EVERY DISABLED BUTTON SAYS WHY IT IS DISABLED', () => {
     'operator/sections/Settings.tsx',
     'operator/sections/Songs.tsx',
     'operator/sections/Bible.tsx',
+    'operator/sections/Media.tsx',
     'operator/sections/Themes.tsx',
     'operator/sections/Dashboard.tsx',
     'operator/sections/Help.tsx',

@@ -20,6 +20,7 @@ import { ServiceSection } from './sections/Service.tsx';
 import { CameraSection } from './sections/Camera.tsx';
 import { SongsSection } from './sections/Songs.tsx';
 import { BibleSection } from './sections/Bible.tsx';
+import { MediaSection } from './sections/Media.tsx';
 import { ThemesSection } from './sections/Themes.tsx';
 import { SettingsSection } from './sections/Settings.tsx';
 import { HelpSection } from './sections/Help.tsx';
@@ -217,6 +218,8 @@ function SectionView({ id }: { id: SectionId }): JSX.Element {
       return <SongsSection />;
     case 'bible':
       return <BibleSection />;
+    case 'media':
+      return <MediaSection />;
     case 'themes':
       return <ThemesSection />;
     case 'settings':

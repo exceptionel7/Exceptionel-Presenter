@@ -75,15 +75,10 @@ export const SECTIONS: readonly SectionDef[] = Object.freeze([
     label: 'Media',
     glyph: '▣',
     group: 'library',
-    available: false,
+    available: true,
     phase: 'Phase 5',
-    requirement: 'Media library for images, video, audio, backgrounds and logos.',
-    capabilities: [
-      'Import with duplicate detection by content hash',
-      'Thumbnail generation and preview',
-      'Streaming playback — large video is never loaded into memory whole',
-      'Categories and favourites',
-    ],
+    requirement:
+      'Media library for images, video and audio. Files are COPIED into the application\u2019s own folder on import and de-duplicated by content hash, so moving or deleting the original cannot empty a slide mid-service. Video thumbnails are not generated — Chromium\u2019s image decoder cannot read a video frame — so a video tile says so rather than showing a blank square. Audio is stored but nothing plays it yet.',
   },
   {
     id: 'camera',

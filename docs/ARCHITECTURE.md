@@ -255,6 +255,10 @@ Rules enforced in code:
   mutate the service.
 - File paths from the renderer are rejected unless they resolve inside the app's media
   root or arrived from a main-process-owned dialog. No path traversal.
+- **A renderer never sees a filesystem path at all.** Media is addressed by id over the
+  `app-media:` protocol, and `media:list` returns a view type with `absPath` and
+  `thumbnailPath` removed. `media:import` takes no payload, so the only importable file is
+  one a human chose in a native dialog. docs/MEDIA.md §Boundary.
 - `will-navigate` / `setWindowOpenHandler` deny all external navigation.
   CSP set via `onHeadersReceived`, no `unsafe-eval` in production.
 
@@ -287,7 +291,11 @@ z0  BASE         solid colour | gradient | black
   service looks right on a 720p projector and a 4K LED wall.
 - Cursor hidden, text selection disabled, context menu suppressed, drag/drop refused.
 - Transitions are CSS/WAAPI on the layer that changed only — a lyric change does not
-  restart the background video.
+  restart the background video. The media layer is keyed on the ASSET ID rather than the
+  cue for exactly that reason, and it is HIDDEN rather than unmounted during a black-out,
+  so coming back resumes the loop instead of restarting and re-buffering it.
+- The MEDIA layer fetches imported files as `app-media://<assetId>` — never a path. See
+  docs/MEDIA.md.
 - `status: 'black'` renders opaque black over z0–z4 while `restoreCueId` is preserved,
   so resuming returns to the exact prior slide. `clear` hides only the TEXT layer,
   leaving camera/background live — that distinction is what operators actually need.
@@ -311,8 +319,8 @@ sized in `cqh` units, where `1cqh` is 1% of the canvas height — so a theme's 8
 `(84/1080)*100cqh` and lands proportionally identically in a 240px preview thumbnail and on a 4K
 wall. No resize listeners, no `transform: scale()`, no measurement pass.
 
-`annotate` is an operator-only prop that draws honest diagnostics: "no camera signal", "image
-backgrounds arrive in Phase 5", "too much text to fit". The audience output never sets it. A caption
+`annotate` is an operator-only prop that draws honest diagnostics: "no camera signal", "no image
+chosen for this background", "too much text to fit". The audience output never sets it. A caption
 on a projector explaining the state of our backlog is worse than showing nothing.
 
 ### Why a cue carries its own text

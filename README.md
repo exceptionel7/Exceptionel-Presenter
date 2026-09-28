@@ -11,7 +11,7 @@ pastors and media teams.
 
 ---
 
-## Status: Phase 2 of 10 — in progress
+## Status: Phase 5 of 10 — in progress
 
 This is an in-development product, not a finished release. The table below is the honest
 state of every subsystem. Anything not marked **Working** is not pretending to work.
@@ -27,17 +27,25 @@ state of every subsystem. Anything not marked **Working** is not pretending to w
 | Live presentation state engine | **Working** | 11 reducer tests |
 | IPC contract + validation + role isolation | **Working** | 31 + 20 tests |
 | Electron security policy | **Working** | 19 tests |
-| Electron shell, windows, React UI | **Not yet run** | see *Verification honesty* below |
-| Bible translations | **NOT IMPLEMENTED** | Phase 4 |
-| Media library | **NOT IMPLEMENTED** | Phase 5 |
-| Live cameras | **NOT IMPLEMENTED** | Phase 6 |
+| Electron shell, windows, React UI | **Working** | run on Windows |
+| Presentation engine (cues, themes, the layer stack) | **Working** | 22 + 28 tests, and run on real hardware |
+| Bible translations | **Working** | 26 + 26 + 23 + 16 + 18 tests, and run on real hardware |
+| Wireless phone camera (QR pairing, PIN, WebRTC) | **Working** | 42 + 27 tests, and run on real hardware |
+| Media import — classify, hash, de-duplicate, copy | **Working** | 19 + 23 tests against real files on disk |
+| Media library index — search, categories, favourites, delete | **Working** | 24 tests against real SQLite |
+| Media serving, backgrounds, media slides, the Media screen | **Written, not yet run** | 16 + 17 + 9 + 15 + 20 tests — see *Verification honesty* |
+| Video poster frames | **NOT IMPLEMENTED** | needs a video decoder; see `docs/MEDIA.md` |
+| Audio playback | **NOT IMPLEMENTED** | audio imports and is stored, but nothing plays it |
+| Theme designer (typography, spacing, transitions) | **NOT IMPLEMENTED** | Phase 9 — backgrounds are editable now |
+| Service builder (drag-and-drop, templates) | **NOT IMPLEMENTED** | Phase 8 |
+| Local camera devices, camera profiles | **NOT IMPLEMENTED** | Phase 6 |
 | Multi-display / projector output | **NOT IMPLEMENTED** | Phase 7 |
 | Cloud / folder sync (the engine itself) | **NOT IMPLEMENTED** | Phase 9+, foundation ready |
 | OBS / NDI / streaming | **NOT IMPLEMENTED** | Phase 10, seams only |
 
 ```
-# tests 246   # pass 246   # fail 0
-STRICT TYPECHECK: CLEAN
+# tests 878   # pass 878   # fail 0
+LOCAL TYPECHECK: CLEAN (109 files fully checked, 26 renderer files name-resolved)
 ```
 
 ### Verification honesty
@@ -46,10 +54,16 @@ The development sandbox this was built in has **no network access**, so `npm ins
 the Electron binary were unavailable. Consequences, stated plainly:
 
 - Everything marked **Working** above was genuinely executed and tested — real SQLite,
-  real constraints, real FTS5 queries, real transaction rollback.
-- The Electron main process, preload bridges and React components are **written but have
-  not been run**. Monitors, projectors, cameras and fullscreen behaviour must be verified
-  on real hardware.
+  real constraints, real FTS5 queries, real transaction rollback, real files on a real disk.
+- The rows that say **and run on real hardware** were additionally confirmed by the author
+  running the packaged application on Windows: lyrics and scripture on a real screen, a
+  phone camera paired over the LAN with text composited over the live feed.
+- Anything marked **Written, not yet run** has unit tests but has never executed inside
+  Electron. For Phase 5 that specifically means protocol registration, real image and video
+  playback, video seeking, thumbnail generation and the file dialog. `docs/MEDIA.md` lists
+  them individually rather than leaving it implied.
+- No rendered layout has been verified at multiple viewport widths from the sandbox. There
+  is no display here.
 
 That constraint shaped the architecture for the better: all real logic lives in
 dependency-free TypeScript under `src/shared` and `src/main/db`, which is why it is
@@ -70,8 +84,11 @@ npm run dist         # build installers for the current platform
 Before `npm run dist`, add your logo as `resources/icon.png` (1024×1024) so
 `electron-builder` can generate the Windows and macOS installer icons.
 
-After `npm install`, delete `tests/node-shims.d.ts` — it is a stand-in for `@types/node`,
-which could not be installed in the build sandbox.
+The sandbox this was built in has no network access, so a local gate stands in for the real
+typecheck: `npm run typecheck:local` checks main, preload, shared and tests with full
+semantics using the shims in `tools/local-typecheck/`, and the renderer for syntax and name
+resolution only. It cannot see React's or Tailwind's types, so run the real
+`npm run typecheck` once dependencies are installed. See `tools/local-typecheck/README.md`.
 
 ## Architecture
 
