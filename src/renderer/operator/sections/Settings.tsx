@@ -7,7 +7,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ShortcutBinding } from '@shared/domain/entities.ts';
-import { client } from '@ui/client.ts';
 import { useMutation, useQuery } from '@ui/hooks.ts';
 import { FailureNotice, Panel, Spinner, StatusDot } from '@ui/primitives.tsx';
 

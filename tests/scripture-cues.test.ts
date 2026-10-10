@@ -303,10 +303,10 @@ test('PACKING SPLITS AT VERSE BOUNDARIES USING THE REAL TYPE SIZE', () => {
    * large type therefore yields more slides than one with small type, automatically.
    */
   const large: ThemeSpec = mergeSpec(BASE_THEME_SPEC, {
-    text: { fontSize: 120, autoFit: { enabled: true, minScale: 0.5 } } as Partial<ThemeSpec>['text'],
+    text: { fontSize: 120, autoFit: { enabled: true, minScale: 0.5 } } as ThemeSpec['text'],
   });
   const small: ThemeSpec = mergeSpec(BASE_THEME_SPEC, {
-    text: { fontSize: 30, autoFit: { enabled: true, minScale: 0.5 } } as Partial<ThemeSpec>['text'],
+    text: { fontSize: 30, autoFit: { enabled: true, minScale: 0.5 } } as ThemeSpec['text'],
   });
 
   const passage = { verses: verses(12) };

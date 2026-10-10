@@ -193,7 +193,9 @@ async function bootstrap(): Promise<void> {
         domain: 'camera',
         code: 'camera/live-source-lost',
         message: `${source.name} was disconnected while live.`,
-        detail: source.unavailableReason ?? undefined,
+        // Omitted rather than set to undefined: `detail` is optional, and exactOptionalPropertyTypes
+        // forbids an explicit undefined.
+        ...(source.unavailableReason === null ? {} : { detail: source.unavailableReason }),
         remedies: [
           'The audience screen has been blacked rather than left on a frozen frame.',
           'Check the phone is awake and on the same Wi-Fi network, then reconnect it.',
