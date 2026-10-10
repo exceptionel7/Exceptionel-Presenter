@@ -442,6 +442,56 @@ starts trickling the moment it sets its local offer, which is before the phone h
 offer at all; `addIceCandidate` rejects in that window, and with no STUN or TURN
 configured those host candidates are the only ones there will ever be.
 
+### Known limitations (Phase 6 follow-ups)
+
+**Audience-safety, highest priority: a failed camera that stays assigned `live` could reappear on
+the projector.** By code reading, not observed. A source keeps its `assignment` when it fails
+(`camera-source-registry.ts`, `syncWireless`), and the output window renders whichever wireless
+source is assigned `live` without checking its status (`useWirelessCameraHost.ts`). So if a camera
+fails while live and its phone then comes back, as session `CR7R66` below did, the projector would
+show it again while the operator sees "Connection failed". CR7R66 had been live earlier in that
+session; whether it was still assigned `live` when it came back was not recorded.
+
+**A phone that comes back after `failed` is refused by main, and nothing else is told.**
+Observed on 2026-10-08 during Phase 4 verification, with Android Chrome session `CR7R66`. After the
+session entered `failed` (the only way in is a `connectionFailed`, meaning a `failed` peer state
+reported by the desktop or the phone), the phone carried on. Its signalling stream re-attached
+(`stream attached for CR7R66 (stream 3)`), it sent `standby` and then `ready`, the output window
+negotiated a new peer connection, and video reached the desktop (`remote track received (CR7R66)`).
+Main refused every event, exactly as the transition table says it should:
+
+```
+CR7R66: connectionInterrupted is not valid from failed
+CR7R66: connectionFailed is not valid from failed
+CR7R66: cameraStandby is not valid from failed
+CR7R66: trackReceived is not valid from failed
+CR7R66: connectionRestored is not valid from failed
+```
+
+The refusal is correct and stays. `failed` leads only to `reset` or `stop`, and
+`tests/wireless-camera-state.test.ts` pins that as "a dead camera never silently revives". The
+gap is that the rest of the system does not agree with main:
+
+- **The phone can still talk to the app.** The pairing registry does not revoke a session's
+  credentials on `failed`, so the phone still authenticates, and main forwards its `ready` to the
+  output window unconditionally. The output window then negotiates and decodes video for a session
+  the state machine will never accept.
+- **The phone page probably says CAMERA LIVE.** It shows that whenever its own peer connection
+  reaches `connected` (`phone-page.ts`, `onconnectionstatechange`). The two
+  `connectionRestored ... from failed` refusals are the desktop and the phone each reporting
+  `connected`, so the phone most likely showed CAMERA LIVE while the operator saw "Connection
+  failed". Not confirmed: no phone-side log was captured.
+- **By code reading: the live-source-lost path never runs.** Nothing calls
+  `CameraSourceRegistry.disconnect`, so `onLiveLost` in `src/main/index.ts` (the blackout and the
+  `camera/live-source-lost` notice) never fires in the running app. A live camera that fails simply
+  loses its picture, with no notice to the operator.
+
+Today the operator recovers with **Remove from list** and a new QR code. Phase 6 should make the
+phone and the output window agree with main rather than relax the rule. For example: end a failed
+session explicitly (revoke it and send `bye`, so the phone shows SESSION ENDED), stop forwarding its
+signalling to the output window, and drop a failed source's `live` assignment. Which of these to do,
+and whether to add an operator "Reconnect" action that starts a fresh session, is a Phase 6 decision.
+
 ---
 
 ## 8. Autosave & crash recovery
