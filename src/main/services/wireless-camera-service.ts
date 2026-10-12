@@ -58,7 +58,11 @@ export interface WirelessCameraServiceOptions {
   offerTimeoutMs?: number;
   /** Called when a phone appears or vanishes, so camera sources can be rebuilt. */
   onPhonesChanged?: (phones: WirelessPhone[]) => void;
-  onLog?: (line: string) => void;
+  /**
+   * Log sink. `level` is `'debug'` for lines that are routine on a healthy connection and ask
+   * nothing of anyone; the host decides whether to print them. Absent means `'info'`.
+   */
+  onLog?: (line: string, level?: 'debug' | 'info') => void;
 }
 
 export interface WirelessCameraService {
@@ -160,7 +164,14 @@ export function createWirelessCameraService(
     if (result.rejected) {
       // Refused transitions are logged, never surfaced: they are a programming signal, not
       // something an operator can act on.
-      log(`[wireless-camera] ${sessionId}: ${result.rejected}`);
+      //
+      // One refusal is routine rather than a signal. The desktop and the phone each report their
+      // peer as `connected`, and when that report lands after the first RTP packet has already
+      // moved the machine to `connected` there is nothing to restore, so every healthy session
+      // produces it. It is logged at debug level so it stops reading as a fault. The same event
+      // refused from any other state, `failed` in particular, still logs at the normal level.
+      const routine = event === 'connectionRestored' && phone.state === 'connected';
+      log(`[wireless-camera] ${sessionId}: ${result.rejected}`, routine ? 'debug' : 'info');
       return;
     }
     if (!result.changed) return;

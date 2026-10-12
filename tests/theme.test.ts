@@ -40,7 +40,7 @@ const theme = (id: string, spec: Partial<ThemeSpec>, parentThemeId: string | nul
 test('A THEME MAY OVERRIDE ONE FIELD WITHOUT LOSING ITS SIBLINGS', () => {
   // A blind spread would wipe fontFamily, fontSize, weight and the shadow, so a theme that set
   // only a colour would silently lose its typography.
-  const merged = mergeSpec(BASE_THEME_SPEC, { text: { color: '#FF0000' } as Partial<ThemeSpec>['text'] });
+  const merged = mergeSpec(BASE_THEME_SPEC, { text: { color: '#FF0000' } as ThemeSpec['text'] });
 
   assert.equal(merged.text.color, '#FF0000');
   assert.equal(merged.text.fontFamily, BASE_THEME_SPEC.text.fontFamily);
@@ -52,7 +52,7 @@ test('A THEME MAY OVERRIDE ONE FIELD WITHOUT LOSING ITS SIBLINGS', () => {
 
 test('nested groups merge one level deep, not wholesale', () => {
   const merged = mergeSpec(BASE_THEME_SPEC, {
-    text: { shadow: { blur: 40 } } as Partial<ThemeSpec>['text'],
+    text: { shadow: { blur: 40 } } as ThemeSpec['text'],
   });
   assert.equal(merged.text.shadow.blur, 40);
   assert.equal(merged.text.shadow.enabled, BASE_THEME_SPEC.text.shadow.enabled, 'siblings survive');
@@ -63,7 +63,7 @@ test('merging never mutates the base spec', () => {
   // BASE_THEME_SPEC is shared by every resolution in the process. Mutating it would corrupt every
   // theme at once, mid-service.
   const before = JSON.stringify(BASE_THEME_SPEC);
-  mergeSpec(BASE_THEME_SPEC, { text: { color: '#00FF00' } as Partial<ThemeSpec>['text'] });
+  mergeSpec(BASE_THEME_SPEC, { text: { color: '#00FF00' } as ThemeSpec['text'] });
   assert.equal(JSON.stringify(BASE_THEME_SPEC), before);
 });
 
@@ -71,9 +71,9 @@ test('merging never mutates the base spec', () => {
 
 test('a child theme inherits from its parent, and nearer definitions win', () => {
   const themes = [
-    theme('grandparent', { text: { color: '#111111', fontSize: 100 } as Partial<ThemeSpec>['text'] }),
-    theme('parent', { text: { fontSize: 90 } as Partial<ThemeSpec>['text'] }, 'grandparent'),
-    theme('child', { text: { fontWeight: 800 } as Partial<ThemeSpec>['text'] }, 'parent'),
+    theme('grandparent', { text: { color: '#111111', fontSize: 100 } as ThemeSpec['text'] }),
+    theme('parent', { text: { fontSize: 90 } as ThemeSpec['text'] }, 'grandparent'),
+    theme('child', { text: { fontWeight: 800 } as ThemeSpec['text'] }, 'parent'),
   ];
 
   const spec = resolveThemeSpec(themes, 'child');
@@ -109,14 +109,14 @@ test('A HAND-EDITED INHERITANCE CYCLE DEGRADES INSTEAD OF HANGING', () => {
 });
 
 test('a theme that is its own parent also terminates', () => {
-  const spec = resolveThemeSpec([theme('a', { text: { fontSize: 50 } as Partial<ThemeSpec>['text'] }, 'a')], 'a');
+  const spec = resolveThemeSpec([theme('a', { text: { fontSize: 50 } as ThemeSpec['text'] }, 'a')], 'a');
   assert.equal(spec?.text.fontSize, 50);
 });
 
 // ── fitting text ────────────────────────────────────────────────────────────────
 
 const specWith = (over: Partial<ThemeSpec['text']>): ThemeSpec =>
-  mergeSpec(BASE_THEME_SPEC, { text: over as Partial<ThemeSpec>['text'] });
+  mergeSpec(BASE_THEME_SPEC, { text: over as ThemeSpec['text'] });
 
 test('a slide that already fits is left at its declared size', () => {
   const spec = specWith({ fontSize: 72, lineHeight: 1.3 });
@@ -148,7 +148,7 @@ test('the vertical arithmetic is exact, not approximate', () => {
    * and can be asserted to the pixel.
    */
   const spec = mergeSpec(BASE_THEME_SPEC, {
-    text: { fontSize: 100, lineHeight: 1.0, autoFit: { enabled: true, minScale: 0.1 } } as Partial<ThemeSpec>['text'],
+    text: { fontSize: 100, lineHeight: 1.0, autoFit: { enabled: true, minScale: 0.1 } } as ThemeSpec['text'],
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
   });
 
@@ -282,7 +282,7 @@ test('withOpacity converts hex to rgba and leaves anything else alone', () => {
 /** The Live Worship theme as migration 0002 seeds it — the one that failed. */
 const LIVE_WORSHIP: ThemeSpec = mergeSpec(BASE_THEME_SPEC, {
   background: { kind: 'camera', value: '' },
-  text: { fontSize: 72, fontWeight: 700, lineHeight: 1.25 } as Partial<ThemeSpec>['text'],
+  text: { fontSize: 72, fontWeight: 700, lineHeight: 1.25 } as ThemeSpec['text'],
   padding: { top: 0.55, right: 0.07, bottom: 0.08, left: 0.07 },
   textBox: { enabled: true, color: '#000000', opacity: 0.38, cornerRadius: 16 },
 });
@@ -341,7 +341,7 @@ test('WHATEVER THE THEME AND THE TEXT, NOTHING IS PREDICTED TO OVERFLOW', () => 
     [
       'tight with scrim',
       mergeSpec(BASE_THEME_SPEC, {
-        text: { fontSize: 96 } as Partial<ThemeSpec>['text'],
+        text: { fontSize: 96 } as ThemeSpec['text'],
         padding: { top: 0.6, right: 0.1, bottom: 0.1, left: 0.1 },
         textBox: { enabled: true, color: '#000000', opacity: 0.5, cornerRadius: 12 },
       }),

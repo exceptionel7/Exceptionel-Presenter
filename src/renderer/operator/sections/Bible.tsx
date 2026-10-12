@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { BibleTranslation, Theme } from '@shared/domain/entities.ts';
+import type { BibleTranslation, ServiceSummary, Theme } from '@shared/domain/entities.ts';
 import { BIBLE_BOOKS } from '@shared/domain/bible.ts';
 import { packPassageIntoSlides, slideReference } from '@shared/domain/scripture.ts';
 import { DEFAULT_THEME_ID, resolveThemeSpecOrBase } from '@shared/domain/theme.ts';
@@ -23,7 +23,6 @@ import type {
   BibleSearchHit,
   ScriptureLookup,
   ScripturePassage,
-  ServiceSummary,
   TranslationImportReport,
 } from '@shared/ipc-contract.ts';
 import { client } from '@ui/client.ts';
