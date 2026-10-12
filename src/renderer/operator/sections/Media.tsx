@@ -16,14 +16,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MEDIA_KINDS, type MediaKind } from '@shared/domain/entities.ts';
+import { MEDIA_KINDS, type MediaKind, type ServiceSummary } from '@shared/domain/entities.ts';
 import {
   acceptedExtensions,
   canBeBackground,
   describeBytes,
   describeMediaKind,
 } from '@shared/domain/media.ts';
-import type { MediaAssetView, MediaImportReport, ServiceSummary } from '@shared/ipc-contract.ts';
+import type { MediaAssetView, MediaImportReport } from '@shared/ipc-contract.ts';
 import { client } from '@ui/client.ts';
 import { useMutation, useQuery } from '@ui/hooks.ts';
 import { EmptyState, FailureNotice, Panel, Spinner } from '@ui/primitives.tsx';

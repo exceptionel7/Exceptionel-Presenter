@@ -272,7 +272,7 @@ test('an unknown or deleted asset is a clean 404', async () => {
 
 test('a thumbnail that was never generated is 404, not the full-size file', async () => {
   const host = fakeHost({
-    resolve: (assetId, want) =>
+    resolve: (_assetId, want) =>
       want === 'thumbnail' ? null : { path: '/userData/media/x.jpg', mime: 'image/jpeg' },
   });
   const response = await host.respond(mediaThumbnailUrl('media_known'));
