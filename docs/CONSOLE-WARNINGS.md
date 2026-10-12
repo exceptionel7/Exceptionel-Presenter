@@ -66,6 +66,22 @@ output; the application itself does not suppress it.
 
 ---
 
+## `[debug] [wireless-camera] <session>: connectionRestored is not valid from connected`
+
+**Verdict: routine. No action.** Printed in development only, tagged `[debug]`.
+
+The wireless-camera state machine refuses any transition it does not define, and logs the
+refusal. Once the first video packet has moved a phone to `connected`, the desktop and the phone
+each report their peer as `connected` as well, and there is nothing left to restore. So every
+healthy session prints this line once or twice. A packaged build drops it.
+
+Refusals from other states print without the tag. `from connecting` can also appear on a healthy
+session, when the phone's report arrives just before the first video packet. `from failed` is never
+routine: it means a phone has come back to a session the app has already given up on. See the
+Phase 6 follow-ups in `docs/ARCHITECTURE.md` §7.
+
+---
+
 ## FIXED: `'console-message' arguments are deprecated`
 
 > Please use `Event<WebContentsConsoleMessageEventParams>` object instead.
