@@ -346,6 +346,48 @@ test('a connection that gives up becomes failed, not silently reconnecting forev
   }
 });
 
+test('the routine connectionRestored refusal logs at debug, and the same refusal from failed does not', async () => {
+  /*
+   * Both ends report `connected` once media is already flowing, so `connectionRestored` refused from
+   * `connected` happens on every healthy session. Refused from `failed` it is the sign of a phone
+   * coming back to a dead session (docs/ARCHITECTURE.md, Phase 6 follow-ups), and must stay visible.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'ep-loglevel-'));
+  const logs: { line: string; level: string }[] = [];
+  const service = createWirelessCameraService({
+    userDataDir: dir,
+    port: 0,
+    bindAddress: '127.0.0.1',
+    readInterfaces: () => LAN,
+    onStatus: () => undefined,
+    onSignalToDesktop: () => undefined,
+    onLog: (line, level) => logs.push({ line, level: level ?? 'info' }),
+  });
+  try {
+    await service.start();
+    const ticket = service.createSession('Phone');
+    service.notifyClaim(ticket.sessionId, true);
+    service.markTrackReceived(ticket.sessionId);
+
+    service.notifyDesktopPeerState(ticket.sessionId, 'connected');
+    const routine = logs.filter((entry) => entry.line.includes('connectionRestored is not valid from connected'));
+    assert.equal(routine.length, 1);
+    assert.equal(routine[0]?.level, 'debug');
+
+    service.notifyDesktopPeerState(ticket.sessionId, 'failed');
+    service.notifyDesktopPeerState(ticket.sessionId, 'connected');
+    const revived = logs.filter((entry) => entry.line.includes('connectionRestored is not valid from failed'));
+    assert.equal(revived.length, 1);
+    assert.equal(revived[0]?.level, 'info', 'a phone returning to a failed session must not be hidden');
+
+    // Ordinary transitions keep the normal level.
+    assert.ok(logs.some((entry) => entry.line.endsWith('→ connected') && entry.level === 'info'));
+  } finally {
+    await service.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('DISCONNECT INVALIDATES THE SESSION CREDENTIALS', async () => {
   const h = await harness();
   try {
